@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowUpRight, ArrowDownRight, RefreshCw, TrendingUp } from "lucide-react"
+import { ArrowUpRight, ArrowDownRight, RefreshCw, TrendingUp, Wifi, WifiOff } from "lucide-react"
 import {
   getBlockchainStats,
   getLatestTransactions,
@@ -14,55 +14,53 @@ import {
 } from "@/lib/api"
 
 export function LiveNetwork() {
-  const [currentTime, setCurrentTime] = useState(new Date())
   const [stats, setStats] = useState<BlockchainStats | null>(null)
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
 
-  // Update current time every second
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date())
-    }, 1000)
-
-    return () => clearInterval(timer)
-  }, [])
-
-  // Fetch blockchain data
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true)
 
-        // Fetch stats and transactions in parallel
-        const [statsData, txData] = await Promise.all([getBlockchainStats(), getLatestTransactions(6)])
+        const [statsData, txData] = await Promise.allSettled([getBlockchainStats(), getLatestTransactions(6)])
 
-        setStats(statsData)
-        setTransactions(txData)
+        if (statsData.status === "fulfilled") {
+          setStats(statsData.value)
+        }
+
+        if (txData.status === "fulfilled") {
+          setTransactions(txData.value)
+        }
+
         setLastUpdate(new Date())
       } catch (error) {
-        console.error("Error fetching live data:", error)
+        console.error("Error in fetchData:", error)
       } finally {
         setLoading(false)
       }
     }
 
-    // Initial fetch
     fetchData()
-
-    // Set up polling every 30 seconds
     const interval = setInterval(fetchData, 30000)
-
     return () => clearInterval(interval)
   }, [])
+
+  const getConnectionStatus = () => {
+    if (!stats) return { icon: WifiOff, text: "Connecting...", color: "text-yellow-400" }
+    if (!stats.isConnected) return { icon: WifiOff, text: "Network Offline", color: "text-red-400" }
+    return { icon: Wifi, text: "Connected", color: "text-green-400" }
+  }
+
+  const connectionStatus = getConnectionStatus()
 
   const statsData = stats
     ? [
         {
           label: "TVL",
           value: stats.tvl,
-          change: "+12.3%",
+          change: stats.isConnected ? "+12.3%" : "—",
           isPositive: true,
           color: "blue",
           description: "Total Value Locked",
@@ -70,23 +68,23 @@ export function LiveNetwork() {
         {
           label: "24h Volume",
           value: stats.volume24h,
-          change: "+5.7%",
+          change: stats.isConnected ? "+5.7%" : "—",
           isPositive: true,
           color: "purple",
           description: "24 Hour Volume",
         },
         {
           label: "Assets",
-          value: formatNumber(stats.totalAssets),
-          change: "+2.1%",
+          value: stats.isConnected ? formatNumber(stats.totalAssets) : "Connecting...",
+          change: stats.isConnected ? "+2.1%" : "—",
           isPositive: true,
           color: "pink",
           description: "Total Assets",
         },
         {
           label: "Users",
-          value: formatNumber(stats.activeUsers),
-          change: "+8.9%",
+          value: stats.isConnected ? formatNumber(stats.activeUsers) : "Connecting...",
+          change: stats.isConnected ? "+8.9%" : "—",
           isPositive: true,
           color: "green",
           description: "Active Users",
@@ -95,22 +93,36 @@ export function LiveNetwork() {
     : [
         {
           label: "TVL",
-          value: "$0",
-          change: "+0%",
+          value: "Connecting...",
+          change: "—",
           isPositive: true,
           color: "blue",
           description: "Total Value Locked",
         },
         {
           label: "24h Volume",
-          value: "$0",
-          change: "+0%",
+          value: "Connecting...",
+          change: "—",
           isPositive: true,
           color: "purple",
           description: "24 Hour Volume",
         },
-        { label: "Assets", value: "0", change: "+0%", isPositive: true, color: "pink", description: "Total Assets" },
-        { label: "Users", value: "0", change: "+0%", isPositive: true, color: "green", description: "Active Users" },
+        {
+          label: "Assets",
+          value: "Connecting...",
+          change: "—",
+          isPositive: true,
+          color: "pink",
+          description: "Total Assets",
+        },
+        {
+          label: "Users",
+          value: "Connecting...",
+          change: "—",
+          isPositive: true,
+          color: "green",
+          description: "Active Users",
+        },
       ]
 
   return (
@@ -123,6 +135,9 @@ export function LiveNetwork() {
               <p className="text-gray-400">Real-time insights into the BCTChain ecosystem</p>
             </div>
             <div className="flex items-center mt-4 md:mt-0 text-sm text-gray-400 animate-in fade-in-0 slide-in-from-right-8 duration-1000">
+              <connectionStatus.icon className={`w-4 h-4 mr-2 ${connectionStatus.color}`} />
+              <span className={connectionStatus.color}>{connectionStatus.text}</span>
+              <span className="mx-2">•</span>
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
               Last updated: {lastUpdate.toLocaleTimeString()}
             </div>
@@ -141,12 +156,14 @@ export function LiveNetwork() {
                     <div className="text-sm font-medium text-gray-400" title={stat.description}>
                       {stat.label}
                     </div>
-                    <div className="flex items-center">
-                      <TrendingUp className="w-3 h-3 mr-1 text-green-400" />
-                      <div className="text-xs font-medium text-green-400 bg-green-400/10 px-2 py-1 rounded-full">
-                        {stat.change}
+                    {stat.change !== "—" && (
+                      <div className="flex items-center">
+                        <TrendingUp className="w-3 h-3 mr-1 text-green-400" />
+                        <div className="text-xs font-medium text-green-400 bg-green-400/10 px-2 py-1 rounded-full">
+                          {stat.change}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                   <div className="text-3xl font-bold text-white mb-2 group-hover:scale-110 transition-transform duration-300">
                     {loading ? <div className="animate-pulse bg-gray-600 h-8 w-20 rounded"></div> : stat.value}
@@ -160,7 +177,7 @@ export function LiveNetwork() {
           </div>
 
           {/* Additional Stats Row */}
-          {stats && !loading && (
+          {stats && stats.isConnected && !loading && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12 animate-in fade-in-0 slide-in-from-bottom-6 duration-1000 delay-300">
               <Card className="border-white/10 bg-white/5 backdrop-blur-xl">
                 <CardContent className="p-6 text-center">
@@ -200,7 +217,6 @@ export function LiveNetwork() {
             <CardContent className="p-0">
               <div className="divide-y divide-white/10">
                 {loading ? (
-                  // Loading skeleton
                   Array.from({ length: 6 }).map((_, index) => (
                     <div key={index} className="flex items-center justify-between p-6 animate-pulse">
                       <div className="flex items-center space-x-4">
@@ -226,12 +242,12 @@ export function LiveNetwork() {
                       <div className="flex items-center space-x-4">
                         <div
                           className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 group-hover:scale-110 ${
-                            tx.type === "Bridge" || tx.type === "Transfer"
+                            tx.type === "Transfer"
                               ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
                               : "bg-purple-500/20 text-purple-400 border border-purple-500/30"
                           }`}
                         >
-                          {tx.type === "Bridge" || tx.type === "Transfer" ? (
+                          {tx.type === "Transfer" ? (
                             <ArrowDownRight className="w-5 h-5" />
                           ) : (
                             <ArrowUpRight className="w-5 h-5" />
@@ -253,7 +269,15 @@ export function LiveNetwork() {
                     </div>
                   ))
                 ) : (
-                  <div className="p-6 text-center text-gray-400">No recent transactions available</div>
+                  <div className="p-12 text-center">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
+                      <ArrowUpRight className="w-8 h-8 text-gray-500" />
+                    </div>
+                    <h3 className="text-lg font-medium text-white mb-2">Awaiting Network Activity</h3>
+                    <p className="text-gray-400 text-sm">
+                      Transactions will appear here once the network connection is established
+                    </p>
+                  </div>
                 )}
               </div>
               <div className="p-6 text-center border-t border-white/10">

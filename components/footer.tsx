@@ -30,10 +30,10 @@ export function Footer() {
             <ul className="space-y-3 text-gray-400">
               <li>
                 <Link
-                  href="#"
+                  href="/trade"
                   className="hover:text-white transition-colors duration-300 hover:translate-x-1 inline-block"
                 >
-                  Bridge
+                  Trade
                 </Link>
               </li>
               <li>
@@ -49,15 +49,15 @@ export function Footer() {
                   href="#"
                   className="hover:text-white transition-colors duration-300 hover:translate-x-1 inline-block"
                 >
-                  Trade
+                  Governance
                 </Link>
               </li>
               <li>
                 <Link
-                  href="#"
+                  href="/docs"
                   className="hover:text-white transition-colors duration-300 hover:translate-x-1 inline-block"
                 >
-                  Governance
+                  Documentation
                 </Link>
               </li>
             </ul>

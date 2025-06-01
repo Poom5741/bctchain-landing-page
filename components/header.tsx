@@ -26,19 +26,13 @@ export function Header() {
 
           <nav className="hidden md:flex items-center space-x-8">
             <Link
-              href="#bridge"
-              className="text-gray-300 hover:text-white text-sm transition-all duration-300 hover:scale-105"
-            >
-              Bridge
-            </Link>
-            <Link
-              href="#trade"
+              href="/trade"
               className="text-gray-300 hover:text-white text-sm transition-all duration-300 hover:scale-105"
             >
               Trade
             </Link>
             <Link
-              href="#docs"
+              href="/docs"
               className="text-gray-300 hover:text-white text-sm transition-all duration-300 hover:scale-105"
             >
               Docs
@@ -74,21 +68,14 @@ export function Header() {
           <div className="md:hidden py-4 border-t border-white/10 animate-in slide-in-from-top-2 duration-300">
             <nav className="flex flex-col space-y-4">
               <Link
-                href="#bridge"
-                className="text-gray-300 hover:text-white transition-colors"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Bridge
-              </Link>
-              <Link
-                href="#trade"
+                href="/trade"
                 className="text-gray-300 hover:text-white transition-colors"
                 onClick={() => setIsMenuOpen(false)}
               >
                 Trade
               </Link>
               <Link
-                href="#docs"
+                href="/docs"
                 className="text-gray-300 hover:text-white transition-colors"
                 onClick={() => setIsMenuOpen(false)}
               >

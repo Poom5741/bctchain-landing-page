@@ -4,32 +4,32 @@ import { ArrowRight, Link2, Coins, TrendingUp, Wallet } from "lucide-react"
 export function Ecosystem() {
   const ecosystemItems = [
     {
-      icon: Link2,
-      title: "Bridge BTC",
-      description: "Move your Bitcoin on-chain safely with cryptographic proofs.",
-      link: "#bridge",
-      color: "blue",
-    },
-    {
       icon: Coins,
       title: "Mint Synths",
       description: "Create synthetic assets: sBTC, sETH, sUSD—fully collateralized.",
-      link: "#mint",
+      link: "/trade",
       color: "purple",
     },
     {
       icon: TrendingUp,
       title: "Trade Assets",
       description: "Access global markets 24/7 with deep liquidity and low fees.",
-      link: "#trade",
+      link: "/trade",
       color: "pink",
     },
     {
       icon: Wallet,
       title: "Earn Yield",
       description: "Provide liquidity and earn rewards through staking and farming.",
-      link: "#earn",
+      link: "/trade",
       color: "green",
+    },
+    {
+      icon: Link2,
+      title: "Governance",
+      description: "Participate in protocol governance and shape the future.",
+      link: "/docs",
+      color: "blue",
     },
   ]
 
