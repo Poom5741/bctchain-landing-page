@@ -24,9 +24,16 @@ export function LiveNetwork() {
   const [stats, setStats] = useState<BlockchainStats | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
     const fetchData = async () => {
       try {
         setLoading(true);
@@ -90,6 +97,7 @@ export function LiveNetwork() {
           gasPrices: { slow: 0.01, average: 0.01, fast: 0.01 },
         });
         setTransactions([]);
+        setLastUpdate(new Date());
       } finally {
         setLoading(false);
       }
@@ -98,7 +106,7 @@ export function LiveNetwork() {
     fetchData();
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [mounted]);
 
   const getConnectionStatus = () => {
     if (!stats)
@@ -107,6 +115,11 @@ export function LiveNetwork() {
       return { icon: WifiOff, text: "Network Offline", color: "text-red-400" };
     return { icon: Wifi, text: "Connected", color: "text-green-400" };
   };
+
+  // Don't render until mounted to prevent hydration mismatch
+  if (!mounted) {
+    return <div className="py-20 min-h-[800px] animate-pulse bg-white/5 rounded-xl" />;
+  }
 
   const connectionStatus = getConnectionStatus();
 
@@ -208,7 +221,7 @@ export function LiveNetwork() {
               <RefreshCw
                 className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
               />
-              Last updated: {lastUpdate.toLocaleTimeString()}
+              Last updated: {lastUpdate?.toLocaleTimeString() ?? "Just now"}
             </div>
           </div>
 
