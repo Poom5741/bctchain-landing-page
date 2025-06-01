@@ -85,7 +85,7 @@ export async function getBlockchainStats(): Promise<BlockchainStats> {
         marketCap = statsData.market_cap || "0"
         isConnected = true
       } catch (e) {
-        console.warn("Error parsing stats data:", e)
+        // Silently handle parsing errors
       }
     }
 
@@ -105,7 +105,7 @@ export async function getBlockchainStats(): Promise<BlockchainStats> {
           }
         }
       } catch (e) {
-        console.warn("Error parsing blocks data:", e)
+        // Silently handle parsing errors
       }
     }
 
@@ -129,7 +129,7 @@ export async function getBlockchainStats(): Promise<BlockchainStats> {
           }, 0)
         }
       } catch (e) {
-        console.warn("Error parsing tokens data:", e)
+        // Silently handle parsing errors
       }
     }
 
@@ -164,7 +164,7 @@ export async function getBlockchainStats(): Promise<BlockchainStats> {
       isConnected,
     }
   } catch (error) {
-    console.error("Error fetching blockchain stats:", error)
+    // Silently handle all errors and return default values
     return {
       blockHeight: 0,
       totalTransactions: 0,
@@ -192,6 +192,7 @@ export async function getLatestTransactions(limit = 10): Promise<Transaction[]> 
     })
 
     if (!response.ok) {
+      // Silently return empty array instead of throwing
       return []
     }
 
@@ -216,7 +217,8 @@ export async function getLatestTransactions(limit = 10): Promise<Transaction[]> 
       fee: tx.fee?.value || "0",
     }))
   } catch (error) {
-    console.error("Error fetching transactions:", error)
+    // Silently handle all errors and return empty array
+    // No console.error to avoid cluttering logs
     return []
   }
 }

@@ -28,15 +28,50 @@ export function LiveNetwork() {
 
         if (statsData.status === "fulfilled") {
           setStats(statsData.value)
+        } else {
+          // Set default stats if fetch failed
+          setStats({
+            blockHeight: 0,
+            totalTransactions: 0,
+            totalAssets: 0,
+            networkHealth: "offline",
+            blockTime: 0,
+            validators: 0,
+            tvl: "Network Offline",
+            volume24h: "Network Offline",
+            activeUsers: 0,
+            totalAddresses: 0,
+            marketCap: "Network Offline",
+            isConnected: false,
+          })
         }
 
         if (txData.status === "fulfilled") {
           setTransactions(txData.value)
+        } else {
+          // Set empty transactions if fetch failed
+          setTransactions([])
         }
 
         setLastUpdate(new Date())
       } catch (error) {
-        console.error("Error in fetchData:", error)
+        // Silently handle any remaining errors
+        // Set fallback data
+        setStats({
+          blockHeight: 0,
+          totalTransactions: 0,
+          totalAssets: 0,
+          networkHealth: "offline",
+          blockTime: 0,
+          validators: 0,
+          tvl: "Network Offline",
+          volume24h: "Network Offline",
+          activeUsers: 0,
+          totalAddresses: 0,
+          marketCap: "Network Offline",
+          isConnected: false,
+        })
+        setTransactions([])
       } finally {
         setLoading(false)
       }
