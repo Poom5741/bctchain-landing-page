@@ -1,6 +1,0 @@
-# Redirects for Cloudflare Pages
-/404.html /not-found/ 301
-/index.html / 301
-
-# SPA fallback for client-side routing
-/* /index.html 200

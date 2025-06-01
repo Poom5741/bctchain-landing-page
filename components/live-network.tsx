@@ -118,7 +118,9 @@ export function LiveNetwork() {
 
   // Don't render until mounted to prevent hydration mismatch
   if (!mounted) {
-    return <div className="py-20 min-h-[800px] animate-pulse bg-white/5 rounded-xl" />;
+    return (
+      <div className="py-20 min-h-[800px] animate-pulse bg-white/5 rounded-xl" />
+    );
   }
 
   const connectionStatus = getConnectionStatus();

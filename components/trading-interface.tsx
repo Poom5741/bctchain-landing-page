@@ -128,7 +128,9 @@ export function TradingInterface() {
 
   // Don't render anything until mounted to prevent hydration mismatch
   if (!mounted) {
-    return <div className="min-h-[600px] animate-pulse bg-white/5 rounded-xl" />;
+    return (
+      <div className="min-h-[600px] animate-pulse bg-white/5 rounded-xl" />
+    );
   }
 
   return (
@@ -141,7 +143,8 @@ export function TradingInterface() {
               Synthetic Asset Trading
             </h2>
             <p className="text-gray-400 text-lg">
-              Trade synthetic assets backed by real-world value with zero slippage
+              Trade synthetic assets backed by real-world value with zero
+              slippage
             </p>
           </div>
 
@@ -300,10 +303,14 @@ export function TradingInterface() {
                         <div className="font-medium text-white group-hover:text-blue-300 transition-colors">
                           {asset.symbol}
                         </div>
-                        <div className="text-sm text-gray-400">{asset.name}</div>
+                        <div className="text-sm text-gray-400">
+                          {asset.name}
+                        </div>
                       </div>
                       <div className="text-right">
-                        <div className="font-medium text-white">{asset.price}</div>
+                        <div className="font-medium text-white">
+                          {asset.price}
+                        </div>
                         <div className="flex items-center text-sm">
                           {asset.change.startsWith("+") ? (
                             <TrendingUp className="w-3 h-3 mr-1 text-green-400" />
