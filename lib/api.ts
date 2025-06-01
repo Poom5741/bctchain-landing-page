@@ -2,7 +2,7 @@
 const API_BASE_URL = "https://scan.bctchain.com/api/v2";
 
 export interface BlockchainStats {
-  blockHeight: number;
+  totalBlocks: number; // Changed from blockHeight to totalBlocks
   totalTransactions: number;
   totalAssets: number;
   networkHealth: string;
@@ -14,6 +14,14 @@ export interface BlockchainStats {
   totalAddresses: number;
   marketCap: string;
   isConnected: boolean;
+  gasUsedToday: string;
+  transactionsToday: number;
+  networkUtilization: number;
+  gasPrices: {
+    slow: number;
+    average: number;
+    fast: number;
+  };
 }
 
 export interface Block {
@@ -51,7 +59,7 @@ export interface Token {
   type: string;
 }
 
-// Fetch comprehensive blockchain statistics - Static export compatible
+// Fetch comprehensive blockchain statistics using the new v2/stats endpoint
 export async function getBlockchainStats(): Promise<BlockchainStats> {
   try {
     const fetchWithTimeout = (url: string) =>
@@ -63,51 +71,51 @@ export async function getBlockchainStats(): Promise<BlockchainStats> {
         signal: AbortSignal.timeout(8000),
       }).catch(() => null);
 
-    const [statsResponse, blocksResponse, tokensResponse] = await Promise.all([
+    // Use the new comprehensive stats endpoint
+    const [statsResponse, tokensResponse] = await Promise.all([
       fetchWithTimeout(`${API_BASE_URL}/stats`),
-      fetchWithTimeout(`${API_BASE_URL}/main-page/blocks`),
       fetchWithTimeout(`${API_BASE_URL}/tokens`),
     ]);
 
-    let blockHeight = 0;
+    let totalBlocks = 0;
     let totalTransactions = 0;
-    let blockTime = 2.0;
-    const networkHealth = "healthy";
-    let totalSupply = "0";
     let totalAddresses = 0;
+    let blockTime = 2.0;
+    let gasUsedToday = "0";
+    let transactionsToday = 0;
+    let networkUtilization = 0;
+    let gasPrices = { slow: 0.01, average: 0.01, fast: 0.01 };
     let marketCap = "0";
     let isConnected = false;
 
     if (statsResponse?.ok) {
       try {
         const statsData = await statsResponse.json();
-        totalSupply = statsData.total_supply || statsData.coin_supply || "0";
-        totalAddresses = Number.parseInt(statsData.total_addresses) || 0;
-        totalTransactions = Number.parseInt(statsData.total_transactions) || 0;
+
+        // Extract data from the new comprehensive stats endpoint
+        totalBlocks = parseInt(statsData.total_blocks) || 0;
+        totalTransactions = parseInt(statsData.total_transactions) || 0;
+        totalAddresses = parseInt(statsData.total_addresses) || 0;
+        blockTime = statsData.average_block_time
+          ? statsData.average_block_time / 1000
+          : 2.0; // Convert ms to seconds
+        gasUsedToday = statsData.gas_used_today || "0";
+        transactionsToday = parseInt(statsData.transactions_today) || 0;
+        networkUtilization = statsData.network_utilization_percentage || 0;
         marketCap = statsData.market_cap || "0";
+
+        // Extract gas prices
+        if (statsData.gas_prices) {
+          gasPrices = {
+            slow: statsData.gas_prices.slow || 0.01,
+            average: statsData.gas_prices.average || 0.01,
+            fast: statsData.gas_prices.fast || 0.01,
+          };
+        }
+
         isConnected = true;
       } catch (e) {
-        // Silently handle parsing errors
-      }
-    }
-
-    if (blocksResponse?.ok) {
-      try {
-        const blocksData = await blocksResponse.json();
-        const blocks = blocksData.items || [];
-
-        if (Array.isArray(blocks) && blocks.length > 0) {
-          blockHeight = Number.parseInt(blocks[0].height) || 0;
-          isConnected = true;
-
-          if (blocks.length >= 2) {
-            const block1 = new Date(blocks[0].timestamp);
-            const block2 = new Date(blocks[1].timestamp);
-            blockTime = Math.abs(block1.getTime() - block2.getTime()) / 1000;
-          }
-        }
-      } catch (e) {
-        // Silently handle parsing errors
+        console.warn("Error parsing stats data:", e);
       }
     }
 
@@ -121,61 +129,71 @@ export async function getBlockchainStats(): Promise<BlockchainStats> {
 
         if (Array.isArray(tokens)) {
           totalAssets = tokens.length;
-          isConnected = true;
 
           totalTokenValue = tokens.reduce((sum: number, token: any) => {
-            const supply = Number.parseFloat(token.total_supply) || 0;
-            const decimals = Number.parseInt(token.decimals) || 18;
+            const supply = parseFloat(token.total_supply) || 0;
+            const decimals = parseInt(token.decimals) || 18;
             const normalizedSupply = supply / Math.pow(10, decimals);
             return sum + normalizedSupply;
           }, 0);
         }
       } catch (e) {
-        // Silently handle parsing errors
+        console.warn("Error parsing tokens data:", e);
       }
     }
 
-    // Calculate values only if we have real data
+    // Calculate derived values
     let tvl = "Connecting...";
     let volume24h = "Connecting...";
     let activeUsers = 0;
 
     if (isConnected) {
-      const nativeTokenValue = Number.parseFloat(totalSupply) / 1e18;
-      const estimatedTVL = (nativeTokenValue + totalTokenValue) * 0.5;
+      // Estimate TVL based on network activity and gas usage
+      const gasUsedTodayNum = parseFloat(gasUsedToday) || 0;
+      const estimatedTVL = (gasUsedTodayNum / 1e18) * 100; // Rough estimation
       tvl = formatCurrency(estimatedTVL);
 
-      const avgTxValue = (estimatedTVL / Math.max(totalTransactions, 1)) * 0.1;
-      volume24h = formatCurrency(
-        avgTxValue * Math.max(totalTransactions / 30, 100)
-      );
+      // Estimate daily volume based on transactions today
+      const avgTxValue = estimatedTVL / Math.max(transactionsToday, 1);
+      volume24h = formatCurrency(avgTxValue * transactionsToday);
 
-      activeUsers = Math.min(
-        totalAddresses,
-        Math.max(totalAddresses * 0.1, 1000)
+      // Estimate active users as percentage of total addresses
+      activeUsers = Math.floor(
+        totalAddresses * Math.min(networkUtilization / 100, 0.1)
       );
     }
 
     return {
-      blockHeight: blockHeight || 0,
+      totalBlocks: totalBlocks || 0,
       totalTransactions: totalTransactions || 0,
       totalAssets: totalAssets || 0,
-      networkHealth: isConnected ? networkHealth : "connecting",
-      blockTime: blockTime || 0,
-      validators: isConnected ? 1 : 0,
+      networkHealth: isConnected
+        ? networkUtilization > 80
+          ? "congested"
+          : "healthy"
+        : "connecting",
+      blockTime: blockTime || 2.0,
+      validators: isConnected
+        ? Math.max(Math.floor(totalBlocks / 100000), 1)
+        : 0, // Estimate validators
       tvl,
       volume24h,
-      activeUsers: Math.floor(activeUsers),
+      activeUsers: Math.max(activeUsers, 0),
       totalAddresses: totalAddresses || 0,
       marketCap: isConnected
-        ? formatCurrency(Number.parseFloat(marketCap))
+        ? formatCurrency(parseFloat(marketCap))
         : "Connecting...",
       isConnected,
+      gasUsedToday: formatNumber(parseFloat(gasUsedToday) / 1e9), // Convert to Gwei
+      transactionsToday: transactionsToday || 0,
+      networkUtilization: networkUtilization || 0,
+      gasPrices,
     };
   } catch (error) {
-    // Silently handle all errors and return default values
+    console.warn("Error fetching blockchain stats:", error);
+    // Return default values on error
     return {
-      blockHeight: 0,
+      totalBlocks: 0,
       totalTransactions: 0,
       totalAssets: 0,
       networkHealth: "offline",
@@ -187,6 +205,10 @@ export async function getBlockchainStats(): Promise<BlockchainStats> {
       totalAddresses: 0,
       marketCap: "Network Offline",
       isConnected: false,
+      gasUsedToday: "0",
+      transactionsToday: 0,
+      networkUtilization: 0,
+      gasPrices: { slow: 0.01, average: 0.01, fast: 0.01 },
     };
   }
 }
