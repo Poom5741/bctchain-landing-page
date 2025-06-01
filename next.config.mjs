@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: "export",
+  trailingSlash: true,
+  skipTrailingSlashRedirect: true,
+  distDir: "dist",
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -9,6 +13,9 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-}
+  compiler: {
+    removeConsole: process.env.NODE_ENV === "production",
+  },
+};
 
-export default nextConfig
+export default nextConfig;

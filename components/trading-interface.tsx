@@ -1,52 +1,99 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowUpDown, TrendingUp, TrendingDown, Activity, ExternalLink, AlertTriangle } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  ArrowUpDown,
+  TrendingUp,
+  TrendingDown,
+  Activity,
+  ExternalLink,
+  AlertTriangle,
+} from "lucide-react";
 
 export function TradingInterface() {
-  const [fromToken, setFromToken] = useState("sBTC")
-  const [toToken, setToToken] = useState("sETH")
-  const [amount, setAmount] = useState("")
-  const [isRedirecting, setIsRedirecting] = useState(false)
-  const router = useRouter()
+  const [fromToken, setFromToken] = useState("sBTC");
+  const [toToken, setToToken] = useState("sETH");
+  const [amount, setAmount] = useState("");
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   const syntheticAssets = [
-    { symbol: "sBTC", name: "Synthetic Bitcoin", price: "$43,250", change: "+2.4%" },
-    { symbol: "sETH", name: "Synthetic Ethereum", price: "$2,680", change: "+1.8%" },
+    {
+      symbol: "sBTC",
+      name: "Synthetic Bitcoin",
+      price: "$43,250",
+      change: "+2.4%",
+    },
+    {
+      symbol: "sETH",
+      name: "Synthetic Ethereum",
+      price: "$2,680",
+      change: "+1.8%",
+    },
     { symbol: "sUSD", name: "Synthetic USD", price: "$1.00", change: "0.0%" },
-    { symbol: "sGOLD", name: "Synthetic Gold", price: "$2,045", change: "+0.7%" },
-    { symbol: "sSP500", name: "Synthetic S&P 500", price: "$4,750", change: "+1.2%" },
+    {
+      symbol: "sGOLD",
+      name: "Synthetic Gold",
+      price: "$2,045",
+      change: "+0.7%",
+    },
+    {
+      symbol: "sSP500",
+      name: "Synthetic S&P 500",
+      price: "$4,750",
+      change: "+1.2%",
+    },
     { symbol: "sOIL", name: "Synthetic Oil", price: "$78.50", change: "-0.5%" },
-  ]
+  ];
 
   const handleTradeClick = () => {
-    setIsRedirecting(true)
+    setIsRedirecting(true);
 
     // Simulate different error scenarios
     const errorScenarios = [
-      { code: "400", message: "DEX integration is currently unavailable. Please check your request parameters." },
-      { code: "500", message: "DEX service is temporarily down for maintenance. Please try again later." },
-    ]
+      {
+        code: "400",
+        message:
+          "DEX integration is currently unavailable. Please check your request parameters.",
+      },
+      {
+        code: "500",
+        message:
+          "DEX service is temporarily down for maintenance. Please try again later.",
+      },
+    ];
 
-    const randomError = errorScenarios[Math.floor(Math.random() * errorScenarios.length)]
+    const randomError =
+      errorScenarios[Math.floor(Math.random() * errorScenarios.length)];
 
     setTimeout(() => {
-      router.push(`/error?code=${randomError.code}&message=${encodeURIComponent(randomError.message)}`)
-    }, 2000)
-  }
+      // Use window.location for static export compatibility
+      window.location.href = `/error/?code=${
+        randomError.code
+      }&message=${encodeURIComponent(randomError.message)}`;
+    }, 2000);
+  };
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="text-center mb-12 animate-in fade-in-0 slide-in-from-bottom-8 duration-1000">
-          <h1 className="text-5xl font-bold text-white mb-4">Synthetic Asset Trading</h1>
-          <p className="text-gray-400 text-lg">Trade synthetic assets with deep liquidity and minimal slippage</p>
+          <h1 className="text-5xl font-bold text-white mb-4">
+            Synthetic Asset Trading
+          </h1>
+          <p className="text-gray-400 text-lg">
+            Trade synthetic assets with deep liquidity and minimal slippage
+          </p>
 
           {/* DEX Notice */}
           <div className="mt-6 max-w-2xl mx-auto">
@@ -54,7 +101,9 @@ export function TradingInterface() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-center text-yellow-400">
                   <ExternalLink className="w-5 h-5 mr-2" />
-                  <span className="text-sm">Trading will redirect to our DEX platform</span>
+                  <span className="text-sm">
+                    Trading will redirect to our DEX platform
+                  </span>
                 </div>
               </CardContent>
             </Card>
@@ -82,7 +131,11 @@ export function TradingInterface() {
                       </SelectTrigger>
                       <SelectContent className="bg-slate-800 border-white/10">
                         {syntheticAssets.map((asset) => (
-                          <SelectItem key={asset.symbol} value={asset.symbol} className="text-white">
+                          <SelectItem
+                            key={asset.symbol}
+                            value={asset.symbol}
+                            className="text-white"
+                          >
                             {asset.symbol}
                           </SelectItem>
                         ))}
@@ -104,9 +157,9 @@ export function TradingInterface() {
                     size="icon"
                     className="rounded-full border border-white/10 hover:bg-white/10"
                     onClick={() => {
-                      const temp = fromToken
-                      setFromToken(toToken)
-                      setToToken(temp)
+                      const temp = fromToken;
+                      setFromToken(toToken);
+                      setToToken(temp);
                     }}
                   >
                     <ArrowUpDown className="w-4 h-4 text-white" />
@@ -123,7 +176,11 @@ export function TradingInterface() {
                       </SelectTrigger>
                       <SelectContent className="bg-slate-800 border-white/10">
                         {syntheticAssets.map((asset) => (
-                          <SelectItem key={asset.symbol} value={asset.symbol} className="text-white">
+                          <SelectItem
+                            key={asset.symbol}
+                            value={asset.symbol}
+                            className="text-white"
+                          >
                             {asset.symbol}
                           </SelectItem>
                         ))}
@@ -133,7 +190,11 @@ export function TradingInterface() {
                       placeholder="0.0"
                       readOnly
                       className="flex-1 bg-white/5 border-white/10 text-white placeholder:text-gray-500"
-                      value={amount ? (Number.parseFloat(amount) * 0.998).toFixed(6) : ""}
+                      value={
+                        amount
+                          ? (Number.parseFloat(amount) * 0.998).toFixed(6)
+                          : ""
+                      }
                     />
                   </div>
                 </div>
@@ -183,10 +244,12 @@ export function TradingInterface() {
                   <div className="flex items-start">
                     <AlertTriangle className="w-4 h-4 text-orange-400 mt-0.5 mr-2 flex-shrink-0" />
                     <div className="text-sm text-orange-300">
-                      <p className="font-medium mb-1">External DEX Integration</p>
+                      <p className="font-medium mb-1">
+                        External DEX Integration
+                      </p>
                       <p className="text-orange-400">
-                        Trading will redirect you to our external DEX platform. Please ensure you have your wallet
-                        connected.
+                        Trading will redirect you to our external DEX platform.
+                        Please ensure you have your wallet connected.
                       </p>
                     </div>
                   </div>
@@ -212,14 +275,22 @@ export function TradingInterface() {
                       className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
                     >
                       <div>
-                        <div className="font-medium text-white">{asset.symbol}</div>
-                        <div className="text-xs text-gray-400">{asset.name}</div>
+                        <div className="font-medium text-white">
+                          {asset.symbol}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          {asset.name}
+                        </div>
                       </div>
                       <div className="text-right">
-                        <div className="font-medium text-white">{asset.price}</div>
+                        <div className="font-medium text-white">
+                          {asset.price}
+                        </div>
                         <div
                           className={`text-xs flex items-center ${
-                            asset.change.startsWith("+") ? "text-green-400" : "text-red-400"
+                            asset.change.startsWith("+")
+                              ? "text-green-400"
+                              : "text-red-400"
                           }`}
                         >
                           {asset.change.startsWith("+") ? (
@@ -253,11 +324,15 @@ export function TradingInterface() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Active Pairs</span>
-                    <span className="text-white font-medium">{syntheticAssets.length}</span>
+                    <span className="text-white font-medium">
+                      {syntheticAssets.length}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Avg. Slippage</span>
-                    <span className="text-green-400 font-medium">&lt; 0.1%</span>
+                    <span className="text-green-400 font-medium">
+                      &lt; 0.1%
+                    </span>
                   </div>
                 </div>
               </CardContent>
@@ -274,7 +349,9 @@ export function TradingInterface() {
                     <span className="text-gray-400">Connection</span>
                     <div className="flex items-center">
                       <div className="w-2 h-2 bg-yellow-400 rounded-full mr-2 animate-pulse"></div>
-                      <span className="text-yellow-400 text-sm">Connecting...</span>
+                      <span className="text-yellow-400 text-sm">
+                        Connecting...
+                      </span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
@@ -292,5 +369,5 @@ export function TradingInterface() {
         </div>
       </div>
     </div>
-  )
+  );
 }
