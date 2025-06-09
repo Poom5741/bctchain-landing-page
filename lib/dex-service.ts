@@ -488,12 +488,10 @@ export class DexService {
         path: actualPath,
         amounts: amountsOut.map((a) => BigInt(a.toString())), // Ensure BigInt, though should already be
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error getting swap quote:", error);
-      // @ts-ignore
       if (error.data) {
         try {
-          // @ts-ignore
           const decodedError = this.routerContract.interface.parseError(
             error.data
           );
@@ -1043,12 +1041,10 @@ export class DexService {
       }
       console.log("Remove liquidity transaction sent:", tx.hash);
       return tx.hash;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error removing liquidity:", error);
-      // @ts-ignore
       if (error.data) {
         try {
-          // @ts-ignore
           const decodedError = this.routerContract.interface.parseError(
             error.data
           );
@@ -1084,23 +1080,23 @@ export class DexService {
         console.error(`Transaction ${txHash} failed with status 0x0.`, receipt);
         // Attempt to get revert reason if not already available
         const tx = await this.provider.getTransaction(txHash);
-        if (tx) {
-          // @ts-ignore
-          const code = await this.provider.call(
-            {
-              ...tx,
-              gasPrice: tx.gasPrice,
-              gasLimit: tx.gasLimit,
+        if (tx && tx.blockNumber) {
+          try {
+            const code = await this.provider.call({
+              to: tx.to,
+              data: tx.data,
               value: tx.value,
-            },
-            tx.blockNumber
-          );
-          const reason = this.decodeRevertReason(code);
-          console.error(
-            "Revert reason:",
-            reason || "Not available or not a standard revert."
-          );
-          throw new Error(`Transaction failed: ${reason || "Status 0x0"}`);
+            });
+            const reason = this.decodeRevertReason(code);
+            console.error(
+              "Revert reason:",
+              reason || "Not available or not a standard revert."
+            );
+            throw new Error(`Transaction failed: ${reason || "Status 0x0"}`);
+          } catch (callError) {
+            console.error("Could not get revert reason:", callError);
+            throw new Error("Transaction failed with status 0x0");
+          }
         }
         throw new Error("Transaction failed with status 0x0");
       }
@@ -1176,7 +1172,7 @@ export class DexService {
     }
   }
 
-  private getTokenInfoByAddress(address: string): TokenInfo | undefined {
+  public getTokenInfoByAddress(address: string): TokenInfo | undefined {
     if (
       address === ZeroAddress ||
       address.toLowerCase() === DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
@@ -1190,9 +1186,26 @@ export class DexService {
         logoURI: "", // Add if available
       };
     }
-    return EXAMPLE_TOKEN_LIST.tokens.find(
+
+    // Try to find in known token list first
+    const knownToken = EXAMPLE_TOKEN_LIST.tokens.find(
       (t) => t.address.toLowerCase() === address.toLowerCase()
     );
+
+    if (knownToken) {
+      return knownToken;
+    }
+
+    // If not found, create a basic token info structure
+    // In a production app, you might fetch this from the blockchain
+    return {
+      chainId: DEX_CONFIG.CHAIN_ID,
+      address: address,
+      symbol: `TOKEN_${address.slice(2, 8).toUpperCase()}`,
+      name: `Unknown Token ${address.slice(2, 8)}`,
+      decimals: 18, // Default to 18 decimals
+      logoURI: "",
+    };
   }
 
   private async getGasOptions(baseGasLimit?: bigint): Promise<{
@@ -1292,15 +1305,118 @@ export class DexService {
     }
   }
 
-  // Placeholder - needs full implementation
-  async fetchLiquidityPools(walletAddress?: string): Promise<any[]> {
-    console.warn(
-      "fetchLiquidityPools is not fully implemented. Returning empty array."
-    );
-    // TODO: Implement logic to fetch all pairs from the factory,
-    // then for each pair, get reserves and user's LP token balance.
-    // This can be complex and might require indexing or iterating through created pairs.
-    return [];
+  // Fetch all liquidity pools and user's LP token balances
+  async fetchLiquidityPools(walletAddress?: string): Promise<LiquidityPool[]> {
+    if (!this.provider || !this.factoryContract) {
+      console.error(
+        "Provider or factory contract not initialized for fetchLiquidityPools."
+      );
+      return [];
+    }
+
+    try {
+      console.log("Fetching liquidity pools...");
+
+      // Get total number of pairs from factory
+      const pairCount = await this.factoryContract.allPairsLength();
+      console.log(`Total pairs in factory: ${pairCount.toString()}`);
+
+      const pools: LiquidityPool[] = [];
+      const maxPairsToCheck = Math.min(Number(pairCount), 50); // Limit for performance
+
+      for (let i = 0; i < maxPairsToCheck; i++) {
+        try {
+          // Get pair address
+          const pairAddress = await this.factoryContract.allPairs(i);
+
+          if (pairAddress === ZeroAddress) continue;
+
+          // Get pair contract
+          const pairContract = new Contract(
+            pairAddress,
+            PAIR_ABI,
+            this.provider
+          );
+
+          // Get token addresses
+          const [token0Address, token1Address, reserves, totalSupply] =
+            await Promise.all([
+              pairContract.token0(),
+              pairContract.token1(),
+              pairContract.getReserves(),
+              pairContract.totalSupply(),
+            ]);
+
+          // Get token info
+          const token0Info = this.getTokenInfoByAddress(token0Address);
+          const token1Info = this.getTokenInfoByAddress(token1Address);
+
+          if (!token0Info || !token1Info) {
+            continue; // Skip if we don't have token info
+          }
+
+          // Format reserves
+          const reserve0Formatted = DexService.formatWeiToDecimal(
+            reserves[0],
+            token0Info.decimals
+          );
+          const reserve1Formatted = DexService.formatWeiToDecimal(
+            reserves[1],
+            token1Info.decimals
+          );
+          const totalSupplyFormatted = DexService.formatWeiToDecimal(
+            totalSupply,
+            18
+          );
+
+          // Get user's LP token balance if wallet is connected
+          let lpTokenBalance = "0";
+          if (walletAddress) {
+            try {
+              const userBalance = await pairContract.balanceOf(walletAddress);
+              lpTokenBalance = DexService.formatWeiToDecimal(userBalance, 18);
+            } catch (error) {
+              console.error(
+                `Error fetching LP balance for ${pairAddress}:`,
+                error
+              );
+            }
+          }
+
+          // Calculate APY (placeholder - would need price feeds for accurate calculation)
+          const apy = Math.random() * 100; // Placeholder APY
+
+          const pool: LiquidityPool = {
+            id: pairAddress,
+            tokenA: token0Info,
+            tokenB: token1Info,
+            reserveA: reserve0Formatted,
+            reserveB: reserve1Formatted,
+            totalSupply: totalSupplyFormatted,
+            lpTokenBalance,
+            apy,
+          };
+
+          // Only include pools with reserves > 0 or user has LP tokens
+          if (
+            parseFloat(reserve0Formatted) > 0 ||
+            parseFloat(reserve1Formatted) > 0 ||
+            parseFloat(lpTokenBalance) > 0
+          ) {
+            pools.push(pool);
+          }
+        } catch (error) {
+          console.error(`Error processing pair ${i}:`, error);
+          continue;
+        }
+      }
+
+      console.log(`Fetched ${pools.length} liquidity pools`);
+      return pools;
+    } catch (error) {
+      console.error("Error fetching liquidity pools:", error);
+      return [];
+    }
   }
 
   // Add any other methods that were previously defined and are still needed.
@@ -1334,6 +1450,249 @@ export class DexService {
       encoded += fees[i].toString(16).padStart(6, "0") + path[i + 1].slice(2);
     }
     return encoded;
+  }
+
+  // Get pool reserves for calculating liquidity ratios
+  async getPoolReserves(
+    tokenAAddress: string,
+    tokenBAddress: string
+  ): Promise<{
+    reserve0: string;
+    reserve1: string;
+    token0: string;
+    token1: string;
+    pairAddress: string | null;
+  } | null> {
+    try {
+      if (!this.provider || !this.factoryContract) {
+        console.error("Provider or factory contract not initialized");
+        return null;
+      }
+
+      // Convert native token addresses to WETH/WBCT for pool lookup
+      let actualTokenA = tokenAAddress;
+      let actualTokenB = tokenBAddress;
+
+      // Convert BCT (native) to WBCT for pool operations
+      if (
+        tokenAAddress === ZeroAddress ||
+        tokenAAddress.toLowerCase() === DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+      ) {
+        actualTokenA = DEX_CONFIG.WETH; // WBCT address
+      }
+      if (
+        tokenBAddress === ZeroAddress ||
+        tokenBAddress.toLowerCase() === DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+      ) {
+        actualTokenB = DEX_CONFIG.WETH; // WBCT address
+      }
+
+      console.log(`Looking for pool: ${actualTokenA} / ${actualTokenB}`);
+
+      // Get pair address using the existing factory contract
+      const pairAddress = await this.factoryContract.getPair(
+        actualTokenA,
+        actualTokenB
+      );
+
+      if (
+        pairAddress === ZeroAddress ||
+        pairAddress === "0x0000000000000000000000000000000000000000"
+      ) {
+        console.log("Pool does not exist for this token pair");
+        return null;
+      }
+
+      // Get pair contract
+      const pairContract = new Contract(pairAddress, PAIR_ABI, this.provider);
+
+      // Get reserves and token order
+      const [reserve0, reserve1] = await pairContract.getReserves();
+      const token0 = await pairContract.token0();
+      const token1 = await pairContract.token1();
+
+      // Check if reserves are valid (greater than 0)
+      if (
+        BigInt(reserve0.toString()) === BigInt(0) &&
+        BigInt(reserve1.toString()) === BigInt(0)
+      ) {
+        console.log("Pool exists but has no liquidity");
+        return null;
+      }
+
+      return {
+        reserve0: reserve0.toString(),
+        reserve1: reserve1.toString(),
+        token0: token0.toLowerCase(),
+        token1: token1.toLowerCase(),
+        pairAddress,
+      };
+    } catch (error: any) {
+      console.error("Error getting pool reserves:", error);
+      // Distinguish between pool not existing and other errors
+      if (
+        error?.message?.includes("execution reverted") ||
+        error?.code === "CALL_EXCEPTION"
+      ) {
+        console.log("Pool likely does not exist or has no liquidity");
+        return null;
+      }
+      // For other errors (network issues, etc.), we should handle them differently
+      throw error;
+    }
+  }
+
+  // Calculate required token amount based on pool ratio
+  async calculateLiquidityRatio(
+    inputTokenAddress: string,
+    outputTokenAddress: string,
+    inputAmount: string,
+    inputTokenDecimals: number,
+    outputTokenDecimals: number
+  ): Promise<string | null> {
+    try {
+      // Convert native token addresses to WETH/WBCT for pool lookup
+      let actualInputTokenAddress = inputTokenAddress;
+      let actualOutputTokenAddress = outputTokenAddress;
+
+      // Convert BCT (native) to WBCT for pool operations
+      if (
+        inputTokenAddress === ZeroAddress ||
+        inputTokenAddress.toLowerCase() === DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+      ) {
+        actualInputTokenAddress = DEX_CONFIG.WETH; // WBCT address
+      }
+      if (
+        outputTokenAddress === ZeroAddress ||
+        outputTokenAddress.toLowerCase() === DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+      ) {
+        actualOutputTokenAddress = DEX_CONFIG.WETH; // WBCT address
+      }
+
+      const poolData = await this.getPoolReserves(
+        actualInputTokenAddress,
+        actualOutputTokenAddress
+      );
+
+      if (!poolData) {
+        return null; // Pool doesn't exist
+      }
+
+      // Determine which token is token0 and which is token1 (using actual addresses)
+      const isInputToken0 = actualInputTokenAddress.toLowerCase() === poolData.token0;
+
+      const inputReserve = isInputToken0
+        ? poolData.reserve0
+        : poolData.reserve1;
+      const outputReserve = isInputToken0
+        ? poolData.reserve1
+        : poolData.reserve0;
+
+      // Convert input amount to wei
+      const inputAmountWei = DexService.parseDecimalToWeiBigInt(
+        inputAmount,
+        inputTokenDecimals
+      );
+
+      // Calculate output amount using the pool ratio: outputAmount = (inputAmount * outputReserve) / inputReserve
+      const outputAmountWei =
+        (inputAmountWei * BigInt(outputReserve)) / BigInt(inputReserve);
+
+      // Convert back to decimal
+      const outputAmount = DexService.formatWeiToDecimal(
+        outputAmountWei,
+        outputTokenDecimals
+      );
+
+      return outputAmount;
+    } catch (error) {
+      console.error("Error calculating liquidity ratio:", error);
+      return null;
+    }
+  }
+
+  // Debug method to investigate LP token details
+  async debugLPToken(lpTokenAddress: string): Promise<any> {
+    if (!this.provider) {
+      console.error("Provider not initialized for debugLPToken");
+      return null;
+    }
+
+    try {
+      console.log(`🔍 Debugging LP token: ${lpTokenAddress}`);
+
+      // Create pair contract instance
+      const pairContract = new Contract(
+        lpTokenAddress,
+        PAIR_ABI,
+        this.provider
+      );
+
+      // Get token addresses from the LP token
+      const [token0Address, token1Address, reserves, totalSupply] =
+        await Promise.all([
+          pairContract.token0(),
+          pairContract.token1(),
+          pairContract.getReserves(),
+          pairContract.totalSupply(),
+        ]);
+
+      console.log(`Token0: ${token0Address}`);
+      console.log(`Token1: ${token1Address}`);
+      console.log(`Reserves:`, reserves);
+      console.log(`Total Supply:`, totalSupply.toString());
+
+      // Get token info
+      const token0Info = this.getTokenInfoByAddress(token0Address);
+      const token1Info = this.getTokenInfoByAddress(token1Address);
+
+      console.log(`Token0 Info:`, token0Info);
+      console.log(`Token1 Info:`, token1Info);
+
+      // Check if factory recognizes this pair
+      if (this.factoryContract) {
+        const factoryPairAddress = await this.factoryContract.getPair(
+          token0Address,
+          token1Address
+        );
+        console.log(`Factory returns pair address: ${factoryPairAddress}`);
+        console.log(`LP token address: ${lpTokenAddress}`);
+        console.log(
+          `Addresses match: ${
+            factoryPairAddress.toLowerCase() === lpTokenAddress.toLowerCase()
+          }`
+        );
+      }
+
+      // Format reserves
+      const reserve0Formatted = DexService.formatWeiToDecimal(
+        reserves[0],
+        token0Info?.decimals || 18
+      );
+      const reserve1Formatted = DexService.formatWeiToDecimal(
+        reserves[1],
+        token1Info?.decimals || 18
+      );
+
+      return {
+        lpTokenAddress,
+        token0Address,
+        token1Address,
+        token0Info,
+        token1Info,
+        reserve0: reserves[0].toString(),
+        reserve1: reserves[1].toString(),
+        reserve0Formatted,
+        reserve1Formatted,
+        totalSupply: totalSupply.toString(),
+        factoryPairAddress: this.factoryContract
+          ? await this.factoryContract.getPair(token0Address, token1Address)
+          : "Factory not available",
+      };
+    } catch (error) {
+      console.error(`Error debugging LP token ${lpTokenAddress}:`, error);
+      return { error: error.message };
+    }
   }
 }
 

@@ -82,18 +82,32 @@ export function TradingInterface() {
 
       const timer = setTimeout(async () => {
         try {
-          const swapParams: SwapParams = {
-            inputToken: fromToken,
-            outputToken: toToken,
-            inputAmount: fromAmount,
-            slippageTolerance: 50, // 0.5% in basis points
-          };
+          // Use the actual dexService getSwapQuote method with correct parameters
+          const quoteResult = await dexService.getSwapQuote(
+            fromToken.address,
+            toToken.address,
+            fromAmount,
+            fromToken.decimals
+          );
 
-          const quote = await dexService.getSwapQuote(swapParams);
-
-          if (quote) {
-            setQuote(quote);
-            setToAmount(quote.outputAmount);
+          if (quoteResult && parseFloat(quoteResult.amountOutDecimal) > 0) {
+            // Convert the result to match the SwapQuote interface expected by the component
+            const mockQuote = {
+              inputToken: fromToken,
+              outputToken: toToken,
+              inputAmount: fromAmount,
+              outputAmount: quoteResult.amountOutDecimal,
+              priceImpact: 0.1, // Default small impact
+              fee: 0.3,
+              route: quoteResult.path,
+              gasEstimate: "150000",
+              minimumReceived: (
+                parseFloat(quoteResult.amountOutDecimal) * 0.995
+              ).toFixed(6), // 0.5% slippage
+              expiresAt: Date.now() + 30000,
+            };
+            setQuote(mockQuote);
+            setToAmount(quoteResult.amountOutDecimal);
             setNoLiquidity(false);
             setQuoteExpiry(Date.now() + 30000); // 30 seconds
           } else {

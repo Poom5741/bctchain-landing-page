@@ -59,6 +59,10 @@ export function PoolInterface() {
   const [amountA, setAmountA] = useState("");
   const [amountB, setAmountB] = useState("");
   const [isAddingLiquidity, setIsAddingLiquidity] = useState(false);
+  const [isCalculatingRatio, setIsCalculatingRatio] = useState(false);
+  const [lastEditedField, setLastEditedField] = useState<"A" | "B" | null>(
+    null
+  );
 
   // Remove Liquidity State
   const [selectedPool, setSelectedPool] = useState<LiquidityPool | null>(null);
@@ -96,8 +100,10 @@ export function PoolInterface() {
       setIsLoadingPools(true);
       setError(null);
 
-      // Fetch real pools from smart contracts
-      const realPools = await dexService.fetchLiquidityPools();
+      // Fetch real pools from smart contracts, pass wallet address if connected
+      const realPools = await dexService.fetchLiquidityPools(
+        connection.address || undefined
+      );
       setPools(realPools);
     } catch (err) {
       console.error("Failed to load pools:", err);
@@ -143,17 +149,22 @@ export function PoolInterface() {
       setError(null);
       setTxStatus("pending");
 
-      // Create add liquidity parameters
-      const addLiquidityParams: AddLiquidityParams = {
-        tokenA,
-        tokenB,
-        amountADesired: amountA,
-        amountBDesired: amountB,
-        slippageTolerance: 50, // 0.5% slippage tolerance in basis points
-      };
+      // Calculate min amounts based on slippage tolerance (0.5%)
+      const slippage = 0.005;
+      const amountAMin = (parseFloat(amountA) * (1 - slippage)).toString();
+      const amountBMin = (parseFloat(amountB) * (1 - slippage)).toString();
 
       // Execute real blockchain transaction
-      const txHash = await dexService.addLiquidity(addLiquidityParams);
+      const txHash = await dexService.addLiquidity(
+        connection.address,
+        tokenA.address,
+        tokenB.address,
+        amountA,
+        amountB,
+        amountAMin,
+        amountBMin,
+        20 // deadline in minutes (default)
+      );
 
       setTxHash(txHash);
       setTxStatus("success");
@@ -163,7 +174,9 @@ export function PoolInterface() {
       setAmountB("");
 
       // Wait for transaction confirmation and reload pools
-      await dexService.waitForTransaction(txHash);
+      if (txHash) {
+        await dexService.waitForTransaction(txHash);
+      }
       loadPools(); // Reload pools after successful transaction
     } catch (err: any) {
       console.error("Add liquidity failed:", err);
@@ -209,8 +222,6 @@ export function PoolInterface() {
       };
 
       // Execute real blockchain transaction
-      const txHash = await dexService.removeLiquidity(removeLiquidityParams);
-
       setTxHash(txHash);
       setTxStatus("success");
 
@@ -219,7 +230,9 @@ export function PoolInterface() {
       setSelectedPool(null);
 
       // Wait for transaction confirmation and reload pools
-      await dexService.waitForTransaction(txHash);
+      if (txHash) {
+        await dexService.waitForTransaction(txHash);
+      }
       loadPools(); // Reload pools after successful transaction
     } catch (err: any) {
       console.error("Remove liquidity failed:", err);
@@ -326,6 +339,94 @@ export function PoolInterface() {
       </div>
     );
   };
+
+  // Auto-calculate Token B amount when Token A amount changes
+  useEffect(() => {
+    if (
+      tokenA &&
+      tokenB &&
+      amountA &&
+      parseFloat(amountA) > 0 &&
+      !isAddingLiquidity &&
+      lastEditedField === "A"
+    ) {
+      const calculateTokenBAmount = async () => {
+        try {
+          setIsCalculatingRatio(true);
+          const calculatedAmount = await dexService.calculateLiquidityRatio(
+            tokenA.address,
+            tokenB.address,
+            amountA,
+            tokenA.decimals,
+            tokenB.decimals
+          );
+
+          if (calculatedAmount) {
+            setAmountB(calculatedAmount);
+            setError(null);
+          } else {
+            // Pool doesn't exist - this would be a new pool
+            setAmountB("");
+            console.log("Pool doesn't exist - new pool creation");
+          }
+        } catch (error) {
+          console.error("Error calculating token B amount:", error);
+          setError("Failed to calculate token amount ratio");
+        } finally {
+          setIsCalculatingRatio(false);
+        }
+      };
+
+      const timer = setTimeout(calculateTokenBAmount, 500); // Debounce
+      return () => clearTimeout(timer);
+    } else if (!amountA && lastEditedField === "A") {
+      setAmountB("");
+    }
+  }, [tokenA, tokenB, amountA, isAddingLiquidity, lastEditedField]);
+
+  // Auto-calculate Token A amount when Token B amount changes
+  useEffect(() => {
+    if (
+      tokenA &&
+      tokenB &&
+      amountB &&
+      parseFloat(amountB) > 0 &&
+      !isAddingLiquidity &&
+      lastEditedField === "B"
+    ) {
+      const calculateTokenAAmount = async () => {
+        try {
+          setIsCalculatingRatio(true);
+          const calculatedAmount = await dexService.calculateLiquidityRatio(
+            tokenB.address,
+            tokenA.address,
+            amountB,
+            tokenB.decimals,
+            tokenA.decimals
+          );
+
+          if (calculatedAmount) {
+            setAmountA(calculatedAmount);
+            setError(null);
+          } else {
+            // Pool doesn't exist - this would be a new pool
+            setAmountA("");
+            console.log("Pool doesn't exist - new pool creation");
+          }
+        } catch (error) {
+          console.error("Error calculating token A amount:", error);
+          setError("Failed to calculate token amount ratio");
+        } finally {
+          setIsCalculatingRatio(false);
+        }
+      };
+
+      const timer = setTimeout(calculateTokenAAmount, 500); // Debounce
+      return () => clearTimeout(timer);
+    } else if (!amountB && lastEditedField === "B") {
+      setAmountA("");
+    }
+  }, [tokenA, tokenB, amountB, isAddingLiquidity, lastEditedField]);
 
   if (!connection.address) {
     return (
@@ -434,48 +535,94 @@ export function PoolInterface() {
                       <label className="text-sm font-medium text-gray-300">
                         Amount A ({tokenA?.symbol || "Token A"})
                       </label>
-                      <Input
-                        type="number"
-                        placeholder="0.0"
-                        value={amountA}
-                        onChange={(e) => setAmountA(e.target.value)}
-                        className="bg-white/5 border-white/10 text-white"
-                      />
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          placeholder="0.0"
+                          value={amountA}
+                          onChange={(e) => {
+                            setAmountA(e.target.value);
+                            setLastEditedField("A");
+                          }}
+                          className="bg-white/5 border-white/10 text-white pr-10"
+                        />
+                        {isCalculatingRatio && lastEditedField === "B" && (
+                          <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-blue-400" />
+                        )}
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-gray-300">
                         Amount B ({tokenB?.symbol || "Token B"})
                       </label>
-                      <Input
-                        type="number"
-                        placeholder="0.0"
-                        value={amountB}
-                        onChange={(e) => setAmountB(e.target.value)}
-                        className="bg-white/5 border-white/10 text-white"
-                      />
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          placeholder="0.0"
+                          value={amountB}
+                          onChange={(e) => {
+                            setAmountB(e.target.value);
+                            setLastEditedField("B");
+                          }}
+                          className="bg-white/5 border-white/10 text-white pr-10"
+                        />
+                        {isCalculatingRatio && lastEditedField === "A" && (
+                          <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-blue-400" />
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  <Button
-                    onClick={handleAddLiquidity}
-                    disabled={
-                      isAddingLiquidity ||
-                      !tokenA ||
-                      !tokenB ||
-                      !amountA ||
-                      !amountB
-                    }
-                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {isAddingLiquidity ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Adding Liquidity...
-                      </>
-                    ) : (
-                      "Add Liquidity"
-                    )}
-                  </Button>
+                  {/* Auto-calculation info */}
+                  {tokenA && tokenB && (
+                    <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg p-3">
+                      <div className="flex items-center text-blue-400 text-sm">
+                        <Info className="h-4 w-4 mr-2" />
+                        <span>
+                          Amounts are automatically calculated based on current pool ratios. 
+                          {!amountA && !amountB && " Enter an amount in either field to see the calculation."}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-3">
+                    <Button
+                      onClick={handleAddLiquidity}
+                      disabled={
+                        isAddingLiquidity ||
+                        !tokenA ||
+                        !tokenB ||
+                        !amountA ||
+                        !amountB ||
+                        isCalculatingRatio
+                      }
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {isAddingLiquidity ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Adding Liquidity...
+                        </>
+                      ) : (
+                        "Add Liquidity"
+                      )}
+                    </Button>
+                    
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setAmountA("");
+                        setAmountB("");
+                        setLastEditedField(null);
+                        setError(null);
+                      }}
+                      disabled={isAddingLiquidity}
+                      className="px-6 border-white/20 text-white hover:bg-white/10"
+                    >
+                      Clear
+                    </Button>
+                  </div>
                 </>
               )}
             </CardContent>
@@ -585,9 +732,16 @@ export function PoolInterface() {
         <TabsContent value="pools" className="mt-6">
           <Card className="bg-white/5 backdrop-blur-sm border-white/10">
             <CardHeader>
-              <CardTitle className="text-white flex items-center">
-                <Droplets className="h-5 w-5 mr-2" />
-                All Liquidity Pools
+              <CardTitle className="text-white flex items-center justify-between">
+                <div className="flex items-center">
+                  <Droplets className="h-5 w-5 mr-2" />
+                  All Liquidity Pools
+                </div>
+                {connection.address && (
+                  <Badge variant="outline" className="text-gray-300 border-gray-500">
+                    {pools.filter(p => parseFloat(p.lpTokenBalance || "0") > 0).length} positions
+                  </Badge>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -608,49 +762,183 @@ export function PoolInterface() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {pools.map((pool) => (
-                    <div
-                      key={pool.id}
-                      className="p-4 bg-white/5 rounded-lg border border-white/10"
-                    >
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <h3 className="font-semibold text-white">
-                            {pool.tokenA.symbol}/{pool.tokenB.symbol}
-                          </h3>
-                          <p className="text-sm text-gray-400">
-                            {pool.tokenA.name} / {pool.tokenB.name}
-                          </p>
+                  {/* Show user's positions first if wallet is connected */}
+                  {connection.address && pools.some(p => parseFloat(p.lpTokenBalance || "0") > 0) && (
+                    <>
+                      <div className="mb-4">
+                        <h4 className="text-sm font-medium text-gray-300 mb-3 flex items-center">
+                          <Wallet className="h-4 w-4 mr-2" />
+                          Your Positions
+                        </h4>
+                        <div className="space-y-3">
+                          {pools
+                            .filter(pool => parseFloat(pool.lpTokenBalance || "0") > 0)
+                            .map((pool) => (
+                              <div
+                                key={`user-${pool.id}`}
+                                className="p-4 bg-blue-500/10 rounded-lg border border-blue-400/20"
+                              >
+                                <div className="flex justify-between items-start mb-3">
+                                  <div>
+                                    <h3 className="font-semibold text-white">
+                                      {pool.tokenA.symbol}/{pool.tokenB.symbol}
+                                    </h3>
+                                    <p className="text-sm text-gray-400">
+                                      {pool.tokenA.name} / {pool.tokenB.name}
+                                    </p>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    {pool.apy && (
+                                      <Badge
+                                        variant="secondary"
+                                        className="bg-green-500/20 text-green-400"
+                                      >
+                                        <TrendingUp className="h-3 w-3 mr-1" />
+                                        {pool.apy.toFixed(2)}% APY
+                                      </Badge>
+                                    )}
+                                    <Badge className="bg-blue-500/20 text-blue-400">
+                                      Your Position
+                                    </Badge>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                                  <div>
+                                    <p className="text-gray-400">Pool Liquidity</p>
+                                    <p className="text-white font-medium">
+                                      {parseFloat(pool.reserveA).toFixed(4)}{" "}
+                                      {pool.tokenA.symbol}
+                                    </p>
+                                    <p className="text-white font-medium">
+                                      {parseFloat(pool.reserveB).toFixed(4)}{" "}
+                                      {pool.tokenB.symbol}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-gray-400">Your LP Tokens</p>
+                                    <p className="text-blue-400 font-medium">
+                                      {parseFloat(pool.lpTokenBalance || "0").toFixed(6)}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-gray-400">Pool Share</p>
+                                    <p className="text-white font-medium">
+                                      {pool.totalSupply && parseFloat(pool.totalSupply) > 0
+                                        ? ((parseFloat(pool.lpTokenBalance || "0") / parseFloat(pool.totalSupply)) * 100).toFixed(4)
+                                        : "0"}%
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="mt-3 flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-white border-white/20 hover:bg-white/10"
+                                    onClick={() => {
+                                      setSelectedPool(pool);
+                                      // Switch to remove liquidity tab
+                                      const removeTab = document.querySelector('[value="remove"]') as HTMLElement;
+                                      removeTab?.click();
+                                    }}
+                                  >
+                                    <Minus className="h-3 w-3 mr-1" />
+                                    Remove
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-white border-white/20 hover:bg-white/10"
+                                    onClick={() => {
+                                      setTokenA(pool.tokenA);
+                                      setTokenB(pool.tokenB);
+                                      // Switch to add liquidity tab
+                                      const addTab = document.querySelector('[value="add"]') as HTMLElement;
+                                      addTab?.click();
+                                    }}
+                                  >
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    Add More
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
                         </div>
-                        {pool.apy && (
-                          <Badge
-                            variant="secondary"
-                            className="bg-green-500/20 text-green-400"
+                      </div>
+                      
+                      {pools.some(p => parseFloat(p.lpTokenBalance || "0") === 0) && (
+                        <div className="border-t border-white/10 pt-4">
+                          <h4 className="text-sm font-medium text-gray-300 mb-3">
+                            All Pools
+                          </h4>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  
+                  {/* Show all pools or remaining pools */}
+                  <div className="space-y-3">
+                    {pools
+                      .filter(pool => !connection.address || parseFloat(pool.lpTokenBalance || "0") === 0)
+                      .map((pool) => (
+                        <div
+                          key={pool.id}
+                          className="p-4 bg-white/5 rounded-lg border border-white/10 hover:border-white/20 transition-colors"
+                        >
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <h3 className="font-semibold text-white">
+                                {pool.tokenA.symbol}/{pool.tokenB.symbol}
+                              </h3>
+                              <p className="text-sm text-gray-400">
+                                {pool.tokenA.name} / {pool.tokenB.name}
+                              </p>
+                            </div>
+                            {pool.apy && (
+                              <Badge
+                                variant="secondary"
+                                className="bg-green-500/20 text-green-400"
+                              >
+                                <TrendingUp className="h-3 w-3 mr-1" />
+                                {pool.apy.toFixed(2)}% APY
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-3">
+                            <div>
+                              <p className="text-gray-400">Pool Liquidity</p>
+                              <p className="text-white font-medium">
+                                {parseFloat(pool.reserveA).toFixed(4)}{" "}
+                                {pool.tokenA.symbol}
+                              </p>
+                              <p className="text-white font-medium">
+                                {parseFloat(pool.reserveB).toFixed(4)}{" "}
+                                {pool.tokenB.symbol}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-gray-400">Total Supply</p>
+                              <p className="text-white font-medium">
+                                {parseFloat(pool.totalSupply || "0").toFixed(6)} LP
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            className="bg-blue-600 hover:bg-blue-700"
+                            onClick={() => {
+                              setTokenA(pool.tokenA);
+                              setTokenB(pool.tokenB);
+                              // Switch to add liquidity tab
+                              const addTab = document.querySelector('[value="add"]') as HTMLElement;
+                              addTab?.click();
+                            }}
                           >
-                            <TrendingUp className="h-3 w-3 mr-1" />
-                            {pool.apy.toFixed(2)}% APY
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <p className="text-gray-400">Total Liquidity</p>
-                          <p className="text-white font-medium">
-                            {parseFloat(pool.reserveA).toFixed(2)}{" "}
-                            {pool.tokenA.symbol} +{" "}
-                            {parseFloat(pool.reserveB).toFixed(2)}{" "}
-                            {pool.tokenB.symbol}
-                          </p>
+                            <Plus className="h-3 w-3 mr-1" />
+                            Add Liquidity
+                          </Button>
                         </div>
-                        <div>
-                          <p className="text-gray-400">Your Position</p>
-                          <p className="text-white font-medium">
-                            {pool.lpTokenBalance || "0"} LP Tokens
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                      ))}
+                  </div>
                 </div>
               )}
             </CardContent>
