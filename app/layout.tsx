@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -66,7 +67,10 @@ export default function RootLayout({
         <link rel="icon" href="/images/bctchain-logo.png" />
         <link rel="apple-touch-icon" href="/images/bctchain-logo.png" />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Toaster theme="dark" />
+      </body>
     </html>
   );
 }

@@ -1,19 +1,23 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Menu, X } from "lucide-react"
-import { ModeToggle } from "@/components/mode-toggle"
+import { useState } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Menu, X } from "lucide-react";
+import { ModeToggle } from "@/components/mode-toggle";
+import { WalletButton } from "@/components/wallet-button";
 
 export function Header() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-black/20 backdrop-blur-xl">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          <Link href="/" className="text-xl font-bold text-white flex items-center gap-3">
+          <Link
+            href="/"
+            className="text-xl font-bold text-white flex items-center gap-3"
+          >
             <div className="relative">
               <img
                 src="/images/bctchain-logo.png"
@@ -45,19 +49,28 @@ export function Header() {
             >
               Explorer
             </Link>
+            <Link
+              href="https://status.bctchain.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-green-400 hover:text-green-300 text-sm transition-all duration-300 hover:scale-105 flex items-center gap-1"
+            >
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              Status
+            </Link>
           </nav>
 
           <div className="hidden md:flex items-center space-x-4">
             <ModeToggle />
-            <Button className="relative overflow-hidden bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25">
-              <span className="relative z-10">Launch App</span>
-              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -skew-x-12 translate-x-[-100%] hover:translate-x-[100%] transition-transform duration-700"></div>
-            </Button>
+            <WalletButton />
           </div>
 
           <div className="md:hidden flex items-center space-x-4">
             <ModeToggle />
-            <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="text-white">
+            <button
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className="text-white"
+            >
               {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
           </div>
@@ -90,13 +103,26 @@ export function Header() {
               >
                 Explorer
               </Link>
+              <Link
+                href="https://status.bctchain.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-green-400 hover:text-green-300 transition-colors flex items-center gap-2"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                Network Status
+              </Link>
               <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white w-full">
                 Launch App
               </Button>
+              <div className="pt-4">
+                <WalletButton variant="compact" className="w-full" />
+              </div>
             </nav>
           </div>
         )}
       </div>
     </header>
-  )
+  );
 }

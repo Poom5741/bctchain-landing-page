@@ -1,4 +1,4 @@
-import Link from "next/link"
+import Link from "next/link";
 
 export function Footer() {
   return (
@@ -17,11 +17,13 @@ export function Footer() {
               <div className="text-2xl font-bold text-white">BCTChain</div>
             </div>
             <p className="text-gray-400 max-w-md mb-6 leading-relaxed">
-              The financial layer for synthetic assets. Securely bridge Bitcoin, mint transparent synthetic assets, and
-              unlock global financial markets.
+              The financial layer for synthetic assets. Securely bridge Bitcoin,
+              mint transparent synthetic assets, and unlock global financial
+              markets.
             </p>
             <p className="text-sm text-gray-500">
-              Decentralized protocol. Use at your own risk. Built with ❤️ by the community.
+              Decentralized protocol. Use at your own risk. Built with ❤️ by the
+              community.
             </p>
           </div>
 
@@ -99,19 +101,48 @@ export function Footer() {
                   Explorer
                 </Link>
               </li>
+              <li>
+                <Link
+                  href="https://status.bctchain.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-green-300 text-green-400 transition-colors duration-300 hover:translate-x-1 inline-block flex items-center gap-2"
+                >
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                  Network Status
+                </Link>
+              </li>
             </ul>
           </div>
         </div>
 
         <div className="border-t border-white/10 mt-12 pt-8">
           <div className="flex flex-col md:flex-row justify-between items-center">
-            <p className="text-gray-400 text-sm mb-4 md:mb-0">© 2024 BCTChain Protocol. All rights reserved.</p>
+            <div className="flex flex-col md:flex-row items-center gap-4 mb-4 md:mb-0">
+              <p className="text-gray-400 text-sm">
+                © 2025 BCTChain Protocol. All rights reserved.
+              </p>
+              <div className="flex items-center gap-2 text-sm">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                <span className="text-green-400">All systems operational</span>
+                <span className="text-gray-500">•</span>
+                <Link
+                  href="https://status.bctchain.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300 transition-colors duration-300"
+                >
+                  Status Page
+                </Link>
+              </div>
+            </div>
             <p className="text-gray-500 text-sm text-center md:text-right max-w-md">
-              Built for transparency, security, and the future of decentralized finance.
+              Built for transparency, security, and the future of decentralized
+              finance.
             </p>
           </div>
         </div>
       </div>
     </footer>
-  )
+  );
 }

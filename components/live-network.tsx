@@ -224,7 +224,51 @@ export function LiveNetwork() {
                 className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
               />
               Last updated: {lastUpdate?.toLocaleTimeString() ?? "Just now"}
+              <span className="mx-2">•</span>
+              <a
+                href="https://status.bctchain.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 hover:text-blue-300 transition-colors duration-300 underline decoration-dotted underline-offset-2 hover:decoration-solid"
+              >
+                Full Status Page
+              </a>
             </div>
+          </div>
+
+          {/* Network Status Banner */}
+          <div className="mb-8 animate-in fade-in-0 slide-in-from-bottom-4 duration-1000 delay-200">
+            <Card className="border-white/10 bg-gradient-to-r from-green-500/10 via-blue-500/10 to-purple-500/10 backdrop-blur-xl hover:from-green-500/20 hover:via-blue-500/20 hover:to-purple-500/20 transition-all duration-500">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="relative">
+                      <div className="w-4 h-4 bg-green-400 rounded-full animate-pulse"></div>
+                      <div className="absolute inset-0 w-4 h-4 bg-green-400 rounded-full animate-ping opacity-30"></div>
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-white mb-1">
+                        Network Status:{" "}
+                        {stats?.isConnected ? "Operational" : "Checking..."}
+                      </h3>
+                      <p className="text-sm text-gray-400">
+                        All systems operational • RPC endpoints healthy • No
+                        incidents reported
+                      </p>
+                    </div>
+                  </div>
+                  <a
+                    href="https://status.bctchain.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition-all duration-300 hover:scale-105 flex items-center gap-2 border border-white/20"
+                  >
+                    <span className="text-sm font-medium">View Status</span>
+                    <ArrowUpRight className="w-4 h-4" />
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Stats Grid */}
