@@ -56,10 +56,10 @@
     {
       "chainId": 1190,
       "address": "0xa74d1fcc64cD9F701B42224A22778B1dCc447FCE",
-      "symbol": "WBCT",
-      "name": "Wrapped BCT",
+      "symbol": "BCT",
+      "name": "BCT Chain Token",
       "decimals": 18,
-      "logoURI": "https://bctchain.com/tokens/wbct.png",
+      "logoURI": "https://bctchain.com/tokens/bct.png",
       "tags": ["wrapped"]
     }
   ]

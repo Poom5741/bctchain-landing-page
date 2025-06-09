@@ -64,7 +64,7 @@ export const DEX_CONFIG = {
   DEFAULT_SLIPPAGE: 50,
 
   // Gas settings
-  GAS_LIMIT_MULTIPLIER: 1.2, // 20% buffer on gas estimates
+  GAS_LIMIT_MULTIPLIER: 1.5, // 20% buffer on gas estimates
   MAX_FEE_PER_GAS: "50000000000", // 50 gwei max
   MAX_PRIORITY_FEE_PER_GAS: "2000000000", // 2 gwei priority
 };
@@ -128,10 +128,10 @@ export const EXAMPLE_TOKEN_LIST: TokenList = {
     {
       chainId: DEX_CONFIG.CHAIN_ID,
       address: "0xa74d1fcc64cD9F701B42224A22778B1dCc447FCE",
-      symbol: "WBCT",
-      name: "Wrapped BCT",
+      symbol: "BCT",
+      name: "BCT Chain Token",
       decimals: 18,
-      logoURI: "https://bctchain.com/tokens/wbct.png",
+      logoURI: "https://bctchain.com/tokens/bct.png",
       tags: ["wrapped"],
     },
   ],
