@@ -1,25 +1,26 @@
 // Production DEX service for interacting with BCTChain smart contracts
-import { DEX_CONFIG, TokenInfo, TokenListService } from "./token-list";
-
-// Define types for Web3 functionality
-interface EthereumProvider {
-  request: (params: { method: string; params?: any[] }) => Promise<any>;
-  on: (event: string, callback: (...args: any[]) => void) => void;
-  removeListener: (event: string, callback: (...args: any[]) => void) => void;
-}
-
-declare global {
-  interface Window {
-    ethereum?: EthereumProvider;
-  }
-}
+import {
+  BrowserProvider,
+  Contract,
+  ZeroAddress,
+  formatUnits,
+  parseUnits,
+  Interface,
+  AbiCoder,
+  MaxUint256,
+} from "ethers";
+import { DEX_CONFIG, EXAMPLE_TOKEN_LIST, TokenInfo } from "./token-list";
 
 // Uniswap V2 Router ABI (minimal interface)
 const ROUTER_V2_ABI = [
   "function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)",
   "function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)",
   "function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) external payable returns (uint[] memory amounts)",
-  "function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)",
+  "function swapExactTokensForETH(uint amountIn, uint amountOutMin, address to, uint deadline) external returns (uint[] memory amounts)",
+  "function addLiquidity(address tokenA, address tokenB, uint amountADesired, uint amountBDesired, uint amountAMin, uint amountBMin, address to, uint deadline) external returns (uint amountA, uint amountB, uint liquidity)",
+  "function addLiquidityETH(address token, uint amountTokenDesired, uint amountTokenMin, uint amountETHMin, address to, uint deadline) external payable returns (uint amountToken, uint amountETH, uint liquidity)",
+  "function removeLiquidity(address tokenA, address tokenB, uint liquidity, uint amountAMin, uint amountBMin, address to, uint deadline) external returns (uint amountA, uint amountB)",
+  "function removeLiquidityETH(address token, uint liquidity, uint amountTokenMin, uint amountETHMin, address to, uint deadline) external returns (uint amountToken, uint amountETH)",
   "function WETH() external pure returns (address)",
 ];
 
@@ -31,6 +32,30 @@ const ERC20_ABI = [
   "function balanceOf(address owner) external view returns (uint256)",
   "function allowance(address owner, address spender) external view returns (uint256)",
   "function approve(address spender, uint256 amount) external returns (bool)",
+];
+
+// Uniswap V2 Factory ABI (minimal interface)
+const FACTORY_ABI = [
+  "function getPair(address tokenA, address tokenB) external view returns (address pair)",
+  "function createPair(address tokenA, address tokenB) external returns (address pair)",
+  "function allPairs(uint) external view returns (address pair)",
+  "function allPairsLength() external view returns (uint)",
+];
+
+// Uniswap V2 Pair ABI (minimal interface)
+const PAIR_ABI = [
+  "function name() external pure returns (string)",
+  "function symbol() external pure returns (string)",
+  "function decimals() external pure returns (uint8)",
+  "function totalSupply() external view returns (uint)",
+  "function balanceOf(address owner) external view returns (uint)",
+  "function allowance(address owner, address spender) external view returns (uint)",
+  "function approve(address spender, uint value) external returns (bool)",
+  "function transfer(address to, uint value) external returns (bool)",
+  "function transferFrom(address from, address to, uint value) external returns (bool)",
+  "function token0() external view returns (address)",
+  "function token1() external view returns (address)",
+  "function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)",
 ];
 
 export interface SwapQuote {
@@ -55,642 +80,1267 @@ export interface SwapParams {
   deadline?: number; // timestamp in seconds
 }
 
+export interface AddLiquidityParams {
+  tokenA: TokenInfo;
+  tokenB: TokenInfo;
+  amountADesired: string;
+  amountBDesired: string;
+  slippageTolerance: number; // in basis points (50 = 0.5%)
+  recipient?: string;
+  deadline?: number; // timestamp in seconds
+}
+
+export interface RemoveLiquidityParams {
+  tokenA: TokenInfo;
+  tokenB: TokenInfo;
+  liquidity: string;
+  slippageTolerance: number; // in basis points (50 = 0.5%)
+  recipient?: string;
+  deadline?: number; // timestamp in seconds
+}
+
+export interface LiquidityPool {
+  id: string;
+  tokenA: TokenInfo;
+  tokenB: TokenInfo;
+  reserveA: string;
+  reserveB: string;
+  totalSupply: string;
+  lpTokenBalance?: string;
+  apy?: number;
+}
+
 export class DexService {
-  private web3Provider: any = null;
+  public provider?: BrowserProvider;
+  private routerContract?: Contract;
+  private factoryContract?: Contract;
 
-  constructor() {
-    this.initializeProvider();
+  constructor(provider?: BrowserProvider) {
+    this.init(provider); // Call the new init method
   }
 
-  private async initializeProvider() {
-    try {
-      // Try to connect to injected provider (MetaMask, etc.)
-      if (typeof window !== "undefined" && window.ethereum) {
-        this.web3Provider = window.ethereum;
-      }
-    } catch (error) {
-      console.error("Failed to initialize provider:", error);
-    }
-  }
-
-  async connectWallet(): Promise<string[]> {
-    if (typeof window === "undefined" || !window.ethereum) {
-      throw new Error(
-        "No wallet detected. Please install MetaMask or another Web3 wallet."
+  /**
+   * Initializes or re-initializes the DexService with a provider.
+   * Sets up the provider and associated contracts.
+   * Clears contracts if the provider is undefined.
+   */
+  public init(provider?: BrowserProvider) {
+    if (provider) {
+      this.provider = provider;
+      this.routerContract = new Contract(
+        DEX_CONFIG.ROUTER_V2,
+        ROUTER_V2_ABI,
+        provider
+      );
+      this.factoryContract = new Contract(
+        DEX_CONFIG.FACTORY_V2,
+        FACTORY_ABI,
+        provider
+      );
+      console.log("DexService: Provider and contracts initialized.");
+    } else {
+      this.provider = undefined;
+      this.routerContract = undefined;
+      this.factoryContract = undefined;
+      console.warn(
+        "DexService: Initialized without provider or provider removed. Contracts are cleared."
       );
     }
+  }
 
+  // Ensure this method is correctly defined if it was part of previous changes
+  public static parseDecimalToWeiBigInt(
+    decimalAmount: string,
+    decimals: number
+  ): bigint {
+    if (!decimalAmount || isNaN(parseFloat(decimalAmount))) {
+      console.warn(
+        `Invalid decimalAmount: ${decimalAmount} for parseDecimalToWeiBigInt`
+      );
+      return BigInt(0);
+    }
     try {
-      const accounts = await window.ethereum.request({
-        method: "eth_requestAccounts",
-      });
-
-      // Switch to correct chain if needed
-      await this.switchToCorrectChain();
-      this.web3Provider = window.ethereum;
-
-      return accounts;
+      return parseUnits(decimalAmount, decimals);
     } catch (error) {
-      console.error("Failed to connect wallet:", error);
-      throw error;
+      console.error(
+        `Error parsing decimal to wei: ${decimalAmount}, decimals: ${decimals}`,
+        error
+      );
+      // Attempt to handle potential precision issues or very small numbers
+      // This is a simplistic fallback, consider a more robust solution if errors persist
+      const parts = decimalAmount.split(".");
+      if (parts.length === 2 && parts[1].length > decimals) {
+        return parseUnits(
+          parts[0] + "." + parts[1].substring(0, decimals),
+          decimals
+        );
+      }
+      return BigInt(0);
     }
   }
 
-  private async switchToCorrectChain() {
-    if (typeof window === "undefined" || !window.ethereum) {
-      throw new Error("No wallet provider available");
-    }
-
+  public static formatWeiToDecimal(
+    wei: string | bigint,
+    decimals: number
+  ): string {
     try {
-      await window.ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: `0x${DEX_CONFIG.CHAIN_ID.toString(16)}` }],
-      });
-    } catch (error: any) {
-      // Chain not added to wallet
-      if (error.code === 4902) {
-        await window.ethereum.request({
-          method: "wallet_addEthereumChain",
-          params: [
-            {
-              chainId: `0x${DEX_CONFIG.CHAIN_ID.toString(16)}`,
-              chainName: DEX_CONFIG.CHAIN_NAME,
-              rpcUrls: [DEX_CONFIG.RPC_URL],
-              blockExplorerUrls: [DEX_CONFIG.EXPLORER_URL],
-              nativeCurrency: {
-                name: DEX_CONFIG.NATIVE_TOKEN.name,
-                symbol: DEX_CONFIG.NATIVE_TOKEN.symbol,
-                decimals: DEX_CONFIG.NATIVE_TOKEN.decimals,
-              },
-            },
-          ],
-        });
-      }
+      const result = formatUnits(BigInt(wei), decimals);
+      // console.log(`formatWeiToDecimal: wei=${wei}, decimals=${decimals}, result=${result}`);
+      return result;
+    } catch (error) {
+      console.error(
+        `Error formatting wei to decimal: wei=${wei}, decimals=${decimals}`,
+        error
+      );
+      return "0.0";
+    }
+  }
+
+  private async getNativeTokenBalance(walletAddress: string): Promise<bigint> {
+    if (!this.provider) {
+      console.error("Provider not available for getNativeTokenBalance.");
+      return BigInt(0);
+    }
+    try {
+      const balance = await this.provider.getBalance(walletAddress);
+      return balance;
+    } catch (error) {
+      console.error("Error fetching native token balance:", error);
+      return BigInt(0);
     }
   }
 
   async getTokenBalance(
+    walletAddress: string,
     tokenAddress: string,
+    decimals: number
+  ): Promise<{ wei: bigint; formatted: string }> {
+    if (!this.provider) {
+      console.error("Provider not available for getTokenBalance.");
+      return { wei: BigInt(0), formatted: "0.0" };
+    }
+    if (!walletAddress || !tokenAddress) {
+      console.warn(
+        "Wallet address or token address is missing for getTokenBalance."
+      );
+      return { wei: BigInt(0), formatted: "0.0" };
+    }
+
+    let balanceWei: bigint;
+
+    if (
+      tokenAddress === ZeroAddress ||
+      tokenAddress.toLowerCase() ===
+        DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+    ) {
+      balanceWei = await this.getNativeTokenBalance(walletAddress);
+    } else {
+      try {
+        const tokenContract = new Contract(
+          tokenAddress,
+          ERC20_ABI,
+          this.provider
+        );
+        balanceWei = await tokenContract.balanceOf(walletAddress);
+      } catch (error) {
+        console.error(
+          `Error fetching ERC20 token balance for ${tokenAddress}:`,
+          error
+        );
+        balanceWei = BigInt(0);
+      }
+    }
+    return {
+      wei: balanceWei,
+      formatted: DexService.formatWeiToDecimal(balanceWei, decimals),
+    };
+  }
+
+  async getUserTokenBalances(
     walletAddress: string
-  ): Promise<string> {
-    if (!this.web3Provider) return "0";
+  ): Promise<
+    Record<
+      string,
+      { balance: string; decimals: number; name: string; symbol: string }
+    >
+  > {
+    if (!walletAddress) {
+      console.warn("Wallet address is not provided to getUserTokenBalances.");
+      return {};
+    }
+    if (!this.provider) {
+      console.warn(
+        "Provider not available for getUserTokenBalances. Returning empty balances."
+      );
+      return {};
+    }
+    console.log("Fetching user token balances for:", walletAddress);
+
+    const tokens = EXAMPLE_TOKEN_LIST.tokens;
+
+    if (!tokens || tokens.length === 0) {
+      console.warn(
+        "No tokens found in the token list for getUserTokenBalances."
+      );
+      return {};
+    }
+
+    const balances: Record<
+      string,
+      { balance: string; decimals: number; name: string; symbol: string }
+    > = {};
+
+    for (const token of tokens) {
+      try {
+        if (
+          !token.address ||
+          typeof token.address !== "string" ||
+          !/^0x[a-fA-F0-9]{40}$/.test(token.address)
+        ) {
+          console.warn(
+            `Invalid address for token ${token.symbol}: ${token.address}`
+          );
+          continue;
+        }
+        // Fetch native token balance if address is zero or matches native token address
+        if (
+          token.address === ZeroAddress ||
+          token.address.toLowerCase() ===
+            DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+        ) {
+          const nativeBalanceData = await this.getTokenBalance(
+            walletAddress,
+            DEX_CONFIG.NATIVE_TOKEN.address,
+            DEX_CONFIG.NATIVE_TOKEN.decimals
+          );
+          balances[DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()] = {
+            balance: nativeBalanceData.formatted,
+            decimals: DEX_CONFIG.NATIVE_TOKEN.decimals,
+            name: DEX_CONFIG.NATIVE_TOKEN.name,
+            symbol: DEX_CONFIG.NATIVE_TOKEN.symbol,
+          };
+        } else {
+          const balanceData = await this.getTokenBalance(
+            walletAddress,
+            token.address,
+            token.decimals
+          );
+          balances[token.address.toLowerCase()] = {
+            balance: balanceData.formatted,
+            decimals: token.decimals,
+            name: token.name,
+            symbol: token.symbol,
+          };
+        }
+      } catch (error) {
+        console.error(
+          `Error fetching balance for ${token.symbol} (${token.address}):`,
+          error
+        );
+        balances[token.address.toLowerCase()] = {
+          balance: "0",
+          decimals: token.decimals,
+          name: token.name,
+          symbol: token.symbol,
+        };
+      }
+    }
+    console.log("User token balances fetched:", balances);
+    return balances;
+  }
+
+  async ensureTokenAllowance(
+    walletAddress: string,
+    tokenAddress: string,
+    spenderAddress: string,
+    requiredAmountWei: bigint
+  ): Promise<boolean> {
+    if (!this.provider) {
+      console.error("Provider not available for ensureTokenAllowance.");
+      return false;
+    }
+    if (
+      tokenAddress === ZeroAddress ||
+      tokenAddress.toLowerCase() ===
+        DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+    ) {
+      return true; // Native tokens don't need allowance
+    }
+
+    const signer = await this.provider.getSigner(walletAddress);
+    const tokenContract = new Contract(tokenAddress, ERC20_ABI, signer);
 
     try {
-      // Handle native token
-      if (
-        tokenAddress === DEX_CONFIG.NATIVE_TOKEN.address ||
-        tokenAddress === "0x0000000000000000000000000000000000000000"
-      ) {
-        const balance = await this.web3Provider.request({
-          method: "eth_getBalance",
-          params: [walletAddress, "latest"],
-        });
-        // Convert from wei to ether (simplified)
-        return (parseInt(balance, 16) / Math.pow(10, 18)).toString();
-      }
+      const currentAllowance = await tokenContract.allowance(
+        walletAddress,
+        spenderAddress
+      );
+      console.log(
+        `Current allowance for ${tokenAddress} by ${walletAddress} to ${spenderAddress}: ${currentAllowance.toString()} wei`
+      );
+      console.log(`Required amount: ${requiredAmountWei.toString()} wei`);
 
-      // Handle ERC20 token - would need to make contract call
-      // For now, return mock data
-      return "0";
+      if (BigInt(currentAllowance) < requiredAmountWei) {
+        console.log(
+          `Insufficient allowance. Requesting approval for ${MaxUint256.toString()} wei...`
+        );
+        const approveTx = await tokenContract.approve(
+          spenderAddress,
+          MaxUint256
+        );
+        console.log("Approval transaction sent:", approveTx.hash);
+        const receipt = await approveTx.wait();
+        if (receipt && receipt.status === 1) {
+          console.log("Approval successful:", receipt.transactionHash);
+          return true;
+        } else {
+          console.error("Approval transaction failed:", receipt);
+          return false;
+        }
+      }
+      console.log("Sufficient allowance already granted.");
+      return true;
     } catch (error) {
-      console.error("Failed to get token balance:", error);
-      return "0";
+      console.error("Error in ensureTokenAllowance:", error);
+      return false;
     }
   }
 
-  async getSwapQuote(params: SwapParams): Promise<SwapQuote | null> {
-    if (!this.web3Provider) {
-      console.error("No web3 provider available");
-      return null;
+  async getSwapQuote(
+    tokenInAddress: string,
+    tokenOutAddress: string,
+    amountInDecimal: string, // Amount of tokenIn to swap, in decimal format
+    tokenInDecimals: number
+  ): Promise<{ amountOutDecimal: string; path: string[]; amounts: bigint[] }> {
+    if (!this.routerContract) {
+      console.error("Router contract not initialized in getSwapQuote.");
+      return { amountOutDecimal: "0", path: [], amounts: [] };
+    }
+    if (!amountInDecimal || parseFloat(amountInDecimal) <= 0) {
+      console.warn("Amount in must be greater than 0 for getSwapQuote.");
+      return { amountOutDecimal: "0", path: [], amounts: [] };
     }
 
+    const amountInWei = DexService.parseDecimalToWeiBigInt(
+      amountInDecimal,
+      tokenInDecimals
+    );
+    if (amountInWei === BigInt(0)) {
+      console.warn("Parsed amountInWei is 0. Cannot get swap quote.");
+      return { amountOutDecimal: "0", path: [], amounts: [] };
+    }
+
+    const path = [tokenInAddress, tokenOutAddress];
+    // If one of the tokens is native, use WETH for routing
+    if (
+      tokenInAddress === ZeroAddress ||
+      tokenInAddress.toLowerCase() ===
+        DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+    ) {
+      path[0] = DEX_CONFIG.WETH;
+    }
+    if (
+      tokenOutAddress === ZeroAddress ||
+      tokenOutAddress.toLowerCase() ===
+        DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+    ) {
+      path[1] = DEX_CONFIG.WETH;
+    }
+
+    // If both are non-WETH and non-Native, consider a path through WETH
+    // For simplicity, direct path or via WETH. More complex routing might be needed.
+    const actualPath =
+      path[0] === DEX_CONFIG.WETH ||
+      path[1] === DEX_CONFIG.WETH ||
+      path[0] === path[1] ||
+      path.length > 2
+        ? path
+        : [path[0], DEX_CONFIG.WETH, path[1]];
+
+    console.log(
+      `getSwapQuote: amountIn=${amountInDecimal} (${amountInWei} wei), path=${actualPath.join(
+        " -> "
+      )}`
+    );
+
     try {
-      const { inputToken, outputToken, inputAmount, slippageTolerance } =
-        params;
-
-      // Validate input amount
-      const inputValue = parseFloat(inputAmount);
-      if (inputValue <= 0) {
-        console.error("Invalid input amount");
-        return null;
-      }
-
-      // Convert input amount to wei
-      const inputAmountWei = `0x${Math.floor(
-        inputValue * Math.pow(10, inputToken.decimals)
-      ).toString(16)}`;
-
-      // Build the swap path
-      const path = this.buildSwapPath(inputToken, outputToken);
-      if (path.length === 0) {
-        console.error("No valid swap path found");
-        return null;
-      }
-
-      console.log("Getting quote for path:", path);
-      console.log("Input amount (wei):", inputAmountWei);
-
-      // Call getAmountsOut on the router contract
-      const getAmountsOutData = this.encodeGetAmountsOut(inputAmountWei, path);
-
-      const result = await this.web3Provider.request({
-        method: "eth_call",
-        params: [
-          {
-            to: DEX_CONFIG.ROUTER_V2,
-            data: getAmountsOutData,
-          },
-          "latest",
-        ],
-      });
-
-      console.log("Router response:", result);
-
-      // Decode the result
-      const amounts = this.decodeAmountsOut(result);
-      if (!amounts || amounts.length < 2) {
-        console.error("Invalid amounts returned from router");
-        return null;
-      }
-
-      // The last amount in the array is the output amount
-      const outputAmountWei = amounts[amounts.length - 1];
-      const outputAmount = (
-        outputAmountWei / Math.pow(10, outputToken.decimals)
-      ).toString();
-
-      // Calculate price impact (simplified)
-      const priceImpact = this.calculatePriceImpact(
-        inputValue,
-        parseFloat(outputAmount)
+      // The return type of getAmountsOut is `bigint[]` as per ethers v6 Contract typing if ABI is correct.
+      // If it's `any[]` or `Result`, explicit casting/conversion is needed.
+      const amountsOut: bigint[] = await this.routerContract.getAmountsOut(
+        amountInWei,
+        actualPath
+      );
+      const tokenOutDecimals = await this.getTokenDecimals(
+        actualPath[actualPath.length - 1]
       );
 
-      // Calculate minimum received with slippage
-      const slippageMultiplier = (10000 - slippageTolerance) / 10000;
-      const minimumReceived = (
-        parseFloat(outputAmount) * slippageMultiplier
-      ).toFixed(6);
-
-      console.log("Quote calculated:", {
-        inputAmount,
-        outputAmount,
-        priceImpact,
-        minimumReceived,
-      });
-
+      const amountOutFormatted = DexService.formatWeiToDecimal(
+        amountsOut[amountsOut.length - 1],
+        tokenOutDecimals
+      );
+      console.log(
+        `Quote received: ${amountOutFormatted} of ${
+          actualPath[actualPath.length - 1]
+        }`
+      );
       return {
-        inputToken,
-        outputToken,
-        inputAmount,
-        outputAmount: parseFloat(outputAmount).toFixed(6),
-        priceImpact,
-        fee: 0.3, // 0.3% standard Uniswap V2 fee
-        route: path,
-        gasEstimate: "200000", // Estimated gas for swap
-        minimumReceived,
-        expiresAt: Date.now() + 60000, // 1 minute expiry
+        amountOutDecimal: amountOutFormatted,
+        path: actualPath,
+        amounts: amountsOut.map((a) => BigInt(a.toString())), // Ensure BigInt, though should already be
       };
-    } catch (error: any) {
-      console.error("Failed to get swap quote:", error);
+    } catch (error) {
+      console.error("Error getting swap quote:", error);
+      // @ts-ignore
+      if (error.data) {
+        try {
+          // @ts-ignore
+          const decodedError = this.routerContract.interface.parseError(
+            error.data
+          );
+          console.error(
+            "Decoded revert reason:",
+            decodedError?.name,
+            decodedError?.args
+          );
+        } catch (e) {
+          console.error("Could not decode revert reason from error.data");
+        }
+      }
+      return { amountOutDecimal: "0", path: actualPath, amounts: [] };
+    }
+  }
 
-      // Check if it's a specific error indicating no liquidity
-      if (
-        error.message?.includes("INSUFFICIENT_OUTPUT_AMOUNT") ||
-        error.message?.includes("INSUFFICIENT_LIQUIDITY") ||
-        error.code === -32000
-      ) {
-        console.error("No liquidity available for this trading pair");
+  async executeSwap(
+    walletAddress: string,
+    tokenInAddress: string,
+    tokenOutAddress: string,
+    amountInDecimal: string, // amount of tokenIn to swap, in decimal
+    amountOutMinDecimal: string, // minimum amount of tokenOut expected, in decimal
+    path: string[], // The path for the swap, e.g., [tokenIn, WETH, tokenOut]
+    deadlineMinutes: number = 20
+  ): Promise<string | null> {
+    if (!this.provider || !this.routerContract) {
+      console.error(
+        "Provider or router contract not initialized for executeSwap."
+      );
+      return null;
+    }
+    const signer = await this.provider.getSigner(walletAddress);
+    const routerWithSigner = this.routerContract.connect(signer) as Contract;
+
+    const tokenIn =
+      EXAMPLE_TOKEN_LIST.tokens.find(
+        (t) => t.address.toLowerCase() === tokenInAddress.toLowerCase()
+      ) ||
+      (tokenInAddress.toLowerCase() ===
+      DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+        ? DEX_CONFIG.NATIVE_TOKEN
+        : undefined);
+    const tokenOut =
+      EXAMPLE_TOKEN_LIST.tokens.find(
+        (t) => t.address.toLowerCase() === tokenOutAddress.toLowerCase()
+      ) ||
+      (tokenOutAddress.toLowerCase() ===
+      DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+        ? DEX_CONFIG.NATIVE_TOKEN
+        : undefined);
+
+    if (!tokenIn || !tokenOut) {
+      console.error("Could not find token info for swap execution.");
+      return null;
+    }
+
+    const amountInWei = DexService.parseDecimalToWeiBigInt(
+      amountInDecimal,
+      tokenIn.decimals
+    );
+    const amountOutMinWei = DexService.parseDecimalToWeiBigInt(
+      amountOutMinDecimal,
+      tokenOut.decimals
+    );
+
+    if (amountInWei <= BigInt(0) || amountOutMinWei < BigInt(0)) {
+      // amountOutMin can be 0 for market orders if allowed
+      console.error("Invalid amounts for swap execution.");
+      return null;
+    }
+
+    const deadline = Math.floor(Date.now() / 1000) + deadlineMinutes * 60;
+    const to = walletAddress; // Receiver of the output tokens
+
+    console.log("Executing swap with params:", {
+      walletAddress,
+      tokenInAddress,
+      tokenOutAddress,
+      amountInDecimal,
+      amountOutMinDecimal,
+      path,
+      deadline,
+    });
+
+    // Ensure allowance for tokenIn if it's not the native token
+    if (
+      tokenInAddress !== ZeroAddress &&
+      tokenInAddress.toLowerCase() !==
+        DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+    ) {
+      const allowanceOK = await this.ensureTokenAllowance(
+        walletAddress,
+        tokenInAddress,
+        DEX_CONFIG.ROUTER_V2,
+        amountInWei
+      );
+      if (!allowanceOK) {
+        console.error("Token allowance not granted or failed.");
         return null;
       }
+    }
 
+    let tx;
+    const gasOptions = await this.getGasOptions();
+
+    try {
+      if (
+        tokenInAddress === ZeroAddress ||
+        tokenInAddress.toLowerCase() ===
+          DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+      ) {
+        // Swap ETH for Tokens
+        console.log("Executing swapExactETHForTokens...");
+        tx = await routerWithSigner.swapExactETHForTokens(
+          amountOutMinWei,
+          path,
+          to,
+          deadline,
+          { ...gasOptions, value: amountInWei }
+        );
+      } else if (
+        tokenOutAddress === ZeroAddress ||
+        tokenOutAddress.toLowerCase() ===
+          DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+      ) {
+        // Swap Tokens for ETH
+        console.log("Executing swapExactTokensForETH...");
+        tx = await routerWithSigner.swapExactTokensForETH(
+          amountInWei,
+          amountOutMinWei,
+          path,
+          to,
+          deadline,
+          gasOptions
+        );
+      } else {
+        // Swap Tokens for Tokens
+        console.log("Executing swapExactTokensForTokens...");
+        tx = await routerWithSigner.swapExactTokensForTokens(
+          amountInWei,
+          amountOutMinWei,
+          path,
+          to,
+          deadline,
+          gasOptions
+        );
+      }
+      console.log("Swap transaction sent:", tx.hash);
+      return tx.hash;
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error("Error in DexService:", error.message);
+        const errorData = (error as any)?.data;
+        if (errorData) {
+          try {
+            const decodedError =
+              this.routerContract?.interface.parseError(errorData);
+            console.error(
+              "Decoded revert reason:",
+              decodedError?.name,
+              decodedError?.args
+            );
+          } catch (e) {
+            console.error("Could not decode revert reason from error.data");
+          }
+        }
+        const transactionHash = (error as any)?.transactionHash;
+        if (transactionHash) {
+          console.error("Transaction hash (if available):", transactionHash);
+        }
+      } else {
+        console.error("Unknown error type:", error);
+      }
+      throw new Error(
+        `Transaction failed: ${(error as any)?.message || "Unknown error"}`
+      );
+    }
+  }
+
+  async addLiquidity(
+    walletAddress: string,
+    tokenAAddress: string,
+    tokenBAddress: string,
+    amountADesiredDecimal: string,
+    amountBDesiredDecimal: string,
+    amountAMinDecimal: string, // Minimum amount of token A to add after slippage
+    amountBMinDecimal: string, // Minimum amount of token B to add after slippage
+    deadlineMinutes: number = 20
+  ): Promise<string | null> {
+    if (!this.provider || !this.routerContract) {
+      console.error(
+        "Provider or router contract not initialized for addLiquidity."
+      );
+      return null;
+    }
+    const signer = await this.provider.getSigner(walletAddress);
+    const routerWithSigner = this.routerContract.connect(signer) as Contract;
+
+    const tokenAInfo = this.getTokenInfoByAddress(tokenAAddress);
+    const tokenBInfo = this.getTokenInfoByAddress(tokenBAddress);
+
+    if (!tokenAInfo || !tokenBInfo) {
+      console.error(
+        "Token info not found for one or both tokens in addLiquidity."
+      );
+      return null;
+    }
+
+    if (
+      (tokenAAddress === ZeroAddress ||
+        tokenAAddress.toLowerCase() ===
+          DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()) &&
+      (tokenBAddress === ZeroAddress ||
+        tokenBAddress.toLowerCase() ===
+          DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase())
+    ) {
+      console.error(
+        "Cannot add liquidity for two native tokens. One must be an ERC20 token (WETH)."
+      );
+      // Or, automatically convert one to WETH if that's desired behavior
+      return null;
+    }
+
+    const amountADesiredWei = DexService.parseDecimalToWeiBigInt(
+      amountADesiredDecimal,
+      tokenAInfo.decimals
+    );
+    const amountBDesiredWei = DexService.parseDecimalToWeiBigInt(
+      amountBDesiredDecimal,
+      tokenBInfo.decimals
+    );
+    const amountAMinWei = DexService.parseDecimalToWeiBigInt(
+      amountAMinDecimal,
+      tokenAInfo.decimals
+    );
+    const amountBMinWei = DexService.parseDecimalToWeiBigInt(
+      amountBMinDecimal,
+      tokenBInfo.decimals
+    );
+
+    if (amountADesiredWei <= BigInt(0) || amountBDesiredWei <= BigInt(0)) {
+      console.error("Desired amounts for liquidity must be greater than zero.");
+      return null;
+    }
+    if (amountAMinWei < BigInt(0) || amountBMinWei < BigInt(0)) {
+      // Min amounts can be 0 if absolutely no slippage protection is desired (not recommended)
+      console.error("Minimum amounts for liquidity cannot be negative.");
+      return null;
+    }
+
+    // Pre-transaction balance checks
+    const balanceAData = await this.getTokenBalance(
+      walletAddress,
+      tokenAAddress,
+      tokenAInfo.decimals
+    );
+    if (balanceAData.wei < amountADesiredWei) {
+      console.error(
+        `Insufficient balance for token A. Required: ${amountADesiredDecimal}, Available: ${balanceAData.formatted}`
+      );
+      // Consider throwing an error or returning a specific message
+      throw new Error(
+        `Insufficient ${tokenAInfo.symbol} balance. Required: ${amountADesiredDecimal}, Available: ${balanceAData.formatted}`
+      );
+    }
+
+    const balanceBData = await this.getTokenBalance(
+      walletAddress,
+      tokenBAddress,
+      tokenBInfo.decimals
+    );
+    if (balanceBData.wei < amountBDesiredWei) {
+      console.error(
+        `Insufficient balance for token B. Required: ${amountBDesiredDecimal}, Available: ${balanceBData.formatted}`
+      );
+      throw new Error(
+        `Insufficient ${tokenBInfo.symbol} balance. Required: ${amountBDesiredDecimal}, Available: ${balanceBData.formatted}`
+      );
+    }
+
+    const deadline = Math.floor(Date.now() / 1000) + deadlineMinutes * 60;
+    const to = walletAddress; // Receiver of the LP tokens
+
+    // Ensure allowances
+    if (
+      tokenAAddress !== ZeroAddress &&
+      tokenAAddress.toLowerCase() !==
+        DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+    ) {
+      const allowanceAOK = await this.ensureTokenAllowance(
+        walletAddress,
+        tokenAAddress,
+        DEX_CONFIG.ROUTER_V2,
+        amountADesiredWei
+      );
+      if (!allowanceAOK) {
+        console.error(
+          `Allowance check failed for token A (${tokenAInfo.symbol})`
+        );
+        return null;
+      }
+    }
+    if (
+      tokenBAddress !== ZeroAddress &&
+      tokenBAddress.toLowerCase() !==
+        DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+    ) {
+      const allowanceBOK = await this.ensureTokenAllowance(
+        walletAddress,
+        tokenBAddress,
+        DEX_CONFIG.ROUTER_V2,
+        amountBDesiredWei
+      );
+      if (!allowanceBOK) {
+        console.error(
+          `Allowance check failed for token B (${tokenBInfo.symbol})`
+        );
+        return null;
+      }
+    }
+
+    console.log("Adding liquidity with params:", {
+      tokenA: tokenAAddress,
+      tokenB: tokenBAddress,
+      amountADesired: amountADesiredWei.toString(),
+      amountBDesired: amountBDesiredWei.toString(),
+      amountAMin: amountAMinWei.toString(),
+      amountBMin: amountBMinWei.toString(),
+      to,
+      deadline,
+    });
+
+    let tx;
+    const gasOptions = await this.getGasOptions(BigInt(300000)); // Slightly higher base for add liquidity
+
+    try {
+      if (
+        tokenAAddress === ZeroAddress ||
+        tokenAAddress.toLowerCase() ===
+          DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+      ) {
+        // Adding liquidity with ETH and TokenB
+        console.log("Executing addLiquidityETH for TokenB:", tokenBAddress);
+        tx = await routerWithSigner.addLiquidityETH(
+          tokenBAddress, // token address
+          amountBDesiredWei, // amountTokenDesired
+          amountBMinWei, // amountTokenMin
+          amountAMinWei, // amountETHMin (amountADesiredWei is ETH value)
+          to,
+          deadline,
+          { ...gasOptions, value: amountADesiredWei } // ETH value passed here
+        );
+      } else if (
+        tokenBAddress === ZeroAddress ||
+        tokenBAddress.toLowerCase() ===
+          DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+      ) {
+        // Adding liquidity with ETH and TokenA
+        console.log("Executing addLiquidityETH for TokenA:", tokenAAddress);
+        tx = await routerWithSigner.addLiquidityETH(
+          tokenAAddress, // token address
+          amountADesiredWei, // amountTokenDesired
+          amountAMinWei, // amountTokenMin
+          amountBMinWei, // amountETHMin (amountBDesiredWei is ETH value)
+          to,
+          deadline,
+          { ...gasOptions, value: amountBDesiredWei } // ETH value passed here
+        );
+      } else {
+        // Adding liquidity with two ERC20 tokens
+        console.log(
+          "Executing addLiquidity for TokenA/TokenB:",
+          tokenAAddress,
+          tokenBAddress
+        );
+        tx = await routerWithSigner.addLiquidity(
+          tokenAAddress,
+          tokenBAddress,
+          amountADesiredWei,
+          amountBDesiredWei,
+          amountAMinWei,
+          amountBMinWei,
+          to,
+          deadline,
+          gasOptions
+        );
+      }
+      console.log("Add liquidity transaction sent:", tx.hash);
+      return tx.hash;
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error("Error in addLiquidity:", error.message);
+        const errorData = (error as any).data;
+        if (errorData) {
+          try {
+            const decodedError = this.routerContract?.interface.parseError(
+              (error as any).data
+            );
+            console.error(
+              "Decoded revert reason:",
+              decodedError?.name,
+              decodedError?.args
+            );
+          } catch (e) {
+            console.error("Could not decode revert reason from error.data");
+          }
+        }
+      } else {
+        console.error("Unknown error type:", error);
+      }
+      throw new Error(
+        `Transaction failed: ${(error as any)?.message || "Unknown error"}`
+      );
+    }
+  }
+
+  async removeLiquidity(
+    walletAddress: string,
+    tokenAAddress: string,
+    tokenBAddress: string,
+    liquidityDecimal: string, // Amount of LP tokens to remove
+    amountAMinDecimal: string,
+    amountBMinDecimal: string,
+    deadlineMinutes: number = 20
+  ): Promise<string | null> {
+    if (!this.provider || !this.routerContract) {
+      console.error(
+        "Provider or router contract not initialized for removeLiquidity."
+      );
+      return null;
+    }
+    const signer = await this.provider.getSigner(walletAddress);
+    const routerWithSigner = this.routerContract.connect(signer) as Contract;
+
+    const tokenAInfo = this.getTokenInfoByAddress(tokenAAddress);
+    const tokenBInfo = this.getTokenInfoByAddress(tokenBAddress);
+    if (!tokenAInfo || !tokenBInfo) {
+      console.error("Token info not found for removeLiquidity.");
+      return null;
+    }
+
+    // LP token decimals are usually 18
+    const lpTokenDecimals = 18;
+    const liquidityWei = DexService.parseDecimalToWeiBigInt(
+      liquidityDecimal,
+      lpTokenDecimals
+    );
+    const amountAMinWei = DexService.parseDecimalToWeiBigInt(
+      amountAMinDecimal,
+      tokenAInfo.decimals
+    );
+    const amountBMinWei = DexService.parseDecimalToWeiBigInt(
+      amountBMinDecimal,
+      tokenBInfo.decimals
+    );
+
+    if (liquidityWei <= BigInt(0)) {
+      console.error("Liquidity amount to remove must be greater than zero.");
+      return null;
+    }
+
+    const deadline = Math.floor(Date.now() / 1000) + deadlineMinutes * 60;
+    const to = walletAddress;
+
+    // Get pair address and ensure allowance for LP tokens
+    const pairAddress = await this.getPairAddress(tokenAAddress, tokenBAddress);
+    if (!pairAddress || pairAddress === ZeroAddress) {
+      console.error("Could not find pair address for LP tokens.");
+      return null;
+    }
+    const allowanceOK = await this.ensureTokenAllowance(
+      walletAddress,
+      pairAddress,
+      DEX_CONFIG.ROUTER_V2,
+      liquidityWei
+    );
+    if (!allowanceOK) {
+      console.error("LP token allowance not granted or failed.");
+      return null;
+    }
+
+    console.log("Removing liquidity with params:", {
+      tokenA: tokenAAddress,
+      tokenB: tokenBAddress,
+      liquidity: liquidityWei.toString(),
+      amountAMin: amountAMinWei.toString(),
+      amountBMin: amountBMinWei.toString(),
+      to,
+      deadline,
+    });
+
+    let tx;
+    const gasOptions = await this.getGasOptions();
+
+    try {
+      if (
+        tokenAAddress === ZeroAddress ||
+        tokenAAddress.toLowerCase() ===
+          DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase() ||
+        tokenBAddress === ZeroAddress ||
+        tokenBAddress.toLowerCase() ===
+          DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+      ) {
+        // Removing liquidity involving ETH
+        const tokenAddress =
+          tokenAAddress === ZeroAddress ||
+          tokenAAddress.toLowerCase() ===
+            DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+            ? tokenBAddress
+            : tokenAAddress;
+        const amountTokenMin =
+          tokenAAddress === ZeroAddress ||
+          tokenAAddress.toLowerCase() ===
+            DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+            ? amountBMinWei
+            : amountAMinWei;
+        const amountETHMin =
+          tokenAAddress === ZeroAddress ||
+          tokenAAddress.toLowerCase() ===
+            DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+            ? amountAMinWei
+            : amountBMinWei;
+
+        console.log("Executing removeLiquidityETH...");
+        tx = await routerWithSigner.removeLiquidityETH(
+          tokenAddress,
+          liquidityWei,
+          amountTokenMin,
+          amountETHMin,
+          to,
+          deadline,
+          gasOptions
+        );
+      } else {
+        // Removing liquidity for two ERC20 tokens
+        console.log("Executing removeLiquidity...");
+        tx = await routerWithSigner.removeLiquidity(
+          tokenAAddress,
+          tokenBAddress,
+          liquidityWei,
+          amountAMinWei,
+          amountBMinWei,
+          to,
+          deadline,
+          gasOptions
+        );
+      }
+      console.log("Remove liquidity transaction sent:", tx.hash);
+      return tx.hash;
+    } catch (error) {
+      console.error("Error removing liquidity:", error);
+      // @ts-ignore
+      if (error.data) {
+        try {
+          // @ts-ignore
+          const decodedError = this.routerContract.interface.parseError(
+            error.data
+          );
+          console.error(
+            "Decoded revert reason:",
+            decodedError?.name,
+            decodedError?.args
+          );
+        } catch (e) {
+          console.error("Could not decode revert reason from error.data");
+        }
+      }
       return null;
     }
   }
 
-  private buildSwapPath(
-    inputToken: TokenInfo,
-    outputToken: TokenInfo
-  ): string[] {
-    const inputAddr =
-      inputToken.address === "0x0000000000000000000000000000000000000000"
-        ? DEX_CONFIG.WETH
-        : inputToken.address;
+  async waitForTransaction(
+    txHash: string,
+    confirmations: number = 1
+  ): Promise<any | null> {
+    if (!this.provider) {
+      console.error("Provider not available for waitForTransaction.");
+      return null;
+    }
+    try {
+      console.log(`Waiting for transaction ${txHash} to be confirmed...`);
+      const receipt = await this.provider.waitForTransaction(
+        txHash,
+        confirmations
+      );
+      console.log("Transaction confirmed:", receipt);
+      if (receipt && receipt.status === 0) {
+        console.error(`Transaction ${txHash} failed with status 0x0.`, receipt);
+        // Attempt to get revert reason if not already available
+        const tx = await this.provider.getTransaction(txHash);
+        if (tx) {
+          // @ts-ignore
+          const code = await this.provider.call(
+            {
+              ...tx,
+              gasPrice: tx.gasPrice,
+              gasLimit: tx.gasLimit,
+              value: tx.value,
+            },
+            tx.blockNumber
+          );
+          const reason = this.decodeRevertReason(code);
+          console.error(
+            "Revert reason:",
+            reason || "Not available or not a standard revert."
+          );
+          throw new Error(`Transaction failed: ${reason || "Status 0x0"}`);
+        }
+        throw new Error("Transaction failed with status 0x0");
+      }
+      return receipt;
+    } catch (error) {
+      console.error(`Error waiting for transaction ${txHash}:`, error);
+      throw error; // Re-throw to be caught by caller
+    }
+  }
 
-    const outputAddr =
-      outputToken.address === "0x0000000000000000000000000000000000000000"
-        ? DEX_CONFIG.WETH
-        : outputToken.address;
+  private decodeRevertReason(hexString: string): string | null {
+    if (!hexString || hexString === "0x")
+      return "No revert reason (successful or not a standard revert).";
+    const iface = new Interface(["function Error(string)"]);
+    try {
+      const decoded = iface.decodeFunctionData("Error", hexString);
+      return decoded[0];
+    } catch (e) {
+      // Not a standard string revert, try common ABI-encoded errors if known
+      // For example, from OpenZeppelin's Ownable: new Interface(["error OwnableUnauthorizedAccount(address account)"])
+      // Or from a custom contract: new Interface(["error MyCustomError(uint256 code)"])
+      // This part would need to be extended based on common errors in your contracts
+      try {
+        return (
+          AbiCoder.defaultAbiCoder().decode(
+            ["string"],
+            hexString.startsWith("0x08c379a0")
+              ? hexString.substring(10)
+              : hexString
+          )?.[0] || "Could not decode revert reason."
+        );
+      } catch (abiError) {
+        console.warn("Failed to decode revert reason with AbiCoder:", abiError);
+        return "Could not decode revert reason (non-standard format).";
+      }
+    }
+  }
 
-    // For direct pairs
-    if (inputAddr !== outputAddr) {
-      return [inputAddr, outputAddr];
+  // Helper to get token decimals
+  private async getTokenDecimals(tokenAddress: string): Promise<number> {
+    if (
+      tokenAddress === ZeroAddress ||
+      tokenAddress.toLowerCase() ===
+        DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+    ) {
+      return DEX_CONFIG.NATIVE_TOKEN.decimals;
+    }
+    const knownToken = EXAMPLE_TOKEN_LIST.tokens.find(
+      (t) => t.address.toLowerCase() === tokenAddress.toLowerCase()
+    );
+    if (knownToken) return knownToken.decimals;
+
+    if (!this.provider) {
+      console.warn(
+        "Provider not available for getTokenDecimals, defaulting to 18."
+      );
+      return 18; // Default fallback
+    }
+    try {
+      const tokenContract = new Contract(
+        tokenAddress,
+        ERC20_ABI,
+        this.provider
+      );
+      const decimals = await tokenContract.decimals();
+      return Number(decimals);
+    } catch (error) {
+      console.error(
+        `Error fetching decimals for ${tokenAddress}, defaulting to 18:`,
+        error
+      );
+      return 18; // Default fallback
+    }
+  }
+
+  private getTokenInfoByAddress(address: string): TokenInfo | undefined {
+    if (
+      address === ZeroAddress ||
+      address.toLowerCase() === DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()
+    ) {
+      return {
+        chainId: DEX_CONFIG.CHAIN_ID,
+        address: DEX_CONFIG.NATIVE_TOKEN.address,
+        symbol: DEX_CONFIG.NATIVE_TOKEN.symbol,
+        name: DEX_CONFIG.NATIVE_TOKEN.name,
+        decimals: DEX_CONFIG.NATIVE_TOKEN.decimals,
+        logoURI: "", // Add if available
+      };
+    }
+    return EXAMPLE_TOKEN_LIST.tokens.find(
+      (t) => t.address.toLowerCase() === address.toLowerCase()
+    );
+  }
+
+  private async getGasOptions(baseGasLimit?: bigint): Promise<{
+    gasLimit: bigint;
+    maxFeePerGas?: bigint;
+    maxPriorityFeePerGas?: bigint;
+  }> {
+    if (!this.provider) {
+      console.warn("Provider not available for getGasOptions. Using defaults.");
+      return { gasLimit: baseGasLimit || BigInt(210000) }; // Default gas limit
+    }
+    try {
+      const feeData = await this.provider.getFeeData();
+      const gasLimit = baseGasLimit
+        ? BigInt(
+            Math.floor(Number(baseGasLimit) * DEX_CONFIG.GAS_LIMIT_MULTIPLIER)
+          )
+        : BigInt(210000); // Default or adjusted base
+
+      if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
+        return {
+          gasLimit: gasLimit,
+          maxFeePerGas: feeData.maxFeePerGas,
+          maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
+        };
+      } else if (feeData.gasPrice) {
+        // Fallback for non-EIP-1559 networks
+        return {
+          gasLimit: gasLimit,
+          // gasPrice: feeData.gasPrice // This would be used if the transaction type supports it
+        };
+      }
+      return { gasLimit: gasLimit }; // Fallback if no fee data
+    } catch (error) {
+      console.error(
+        "Error fetching fee data, using default gas options:",
+        error
+      );
+      return { gasLimit: baseGasLimit || BigInt(210000) };
+    }
+  }
+
+  async getPairAddress(
+    tokenAAddress: string,
+    tokenBAddress: string
+  ): Promise<string | null> {
+    if (!this.factoryContract) {
+      console.error("Factory contract not initialized in getPairAddress.");
+      return null;
+    }
+    try {
+      // Ensure consistent ordering for pair address calculation
+      const [token0, token1] =
+        tokenAAddress.toLowerCase() < tokenBAddress.toLowerCase()
+          ? [tokenAAddress, tokenBAddress]
+          : [tokenBAddress, tokenAAddress];
+      const pairAddress = await this.factoryContract.getPair(token0, token1);
+      return pairAddress;
+    } catch (error) {
+      console.error("Error getting pair address:", error);
+      return null;
+    }
+  }
+
+  async getLiquidityTokenBalance(
+    walletAddress: string,
+    tokenAAddress: string,
+    tokenBAddress: string
+  ): Promise<{ wei: bigint; formatted: string; pairAddress: string | null }> {
+    if (!this.provider || !this.factoryContract) {
+      console.error(
+        "Provider or factory contract not initialized for getLiquidityTokenBalance."
+      );
+      return { wei: BigInt(0), formatted: "0.0", pairAddress: null };
+    }
+    const pairAddress = await this.getPairAddress(tokenAAddress, tokenBAddress);
+    if (!pairAddress || pairAddress === ZeroAddress) {
+      console.log("LP token pair address not found or is zero address.");
+      return { wei: BigInt(0), formatted: "0.0", pairAddress: null };
     }
 
+    try {
+      const pairContract = new Contract(pairAddress, PAIR_ABI, this.provider);
+      const balanceWei: bigint = await pairContract.balanceOf(walletAddress);
+      // LP tokens typically have 18 decimals
+      const formattedBalance = DexService.formatWeiToDecimal(balanceWei, 18);
+      console.log(
+        `LP token balance for ${pairAddress} by ${walletAddress}: ${formattedBalance} (${balanceWei} wei)`
+      );
+      return { wei: balanceWei, formatted: formattedBalance, pairAddress };
+    } catch (error) {
+      console.error(
+        `Error fetching LP token balance for pair ${pairAddress}:`,
+        error
+      );
+      return { wei: BigInt(0), formatted: "0.0", pairAddress };
+    }
+  }
+
+  // Placeholder - needs full implementation
+  async fetchLiquidityPools(walletAddress?: string): Promise<any[]> {
+    console.warn(
+      "fetchLiquidityPools is not fully implemented. Returning empty array."
+    );
+    // TODO: Implement logic to fetch all pairs from the factory,
+    // then for each pair, get reserves and user's LP token balance.
+    // This can be complex and might require indexing or iterating through created pairs.
     return [];
   }
 
-  private calculatePriceImpact(
-    inputAmount: number,
-    outputAmount: number
-  ): number {
-    // Simplified price impact calculation
-    // In a real implementation, you'd compare against the theoretical price
-    // without slippage based on current reserves
-    return Math.min(
-      Math.abs((inputAmount - outputAmount) / inputAmount) * 100,
-      5
-    );
-  }
+  // Add any other methods that were previously defined and are still needed.
+  // e.g., decodeAmountsOut, encodePath, etc. if they are used by other parts of the application.
 
-  private encodeGetAmountsOut(amountIn: string, path: string[]): string {
-    // getAmountsOut(uint amountIn, address[] calldata path)
-    // Function selector: 0xd06ca61f
-    const functionSelector = "0xd06ca61f";
-
-    const encodedParams = this.encodeParameters(
-      ["uint256", "address[]"],
-      [amountIn, path]
-    );
-
-    return functionSelector + encodedParams.slice(2);
-  }
-
-  private decodeAmountsOut(result: string): number[] | null {
-    if (!result || result === "0x" || result.length < 66) {
-      return null;
-    }
-
+  public decodeAmountsOut(amountsOutEncoded: string): bigint[] {
     try {
-      // Remove 0x prefix
-      const data = result.slice(2);
-
-      // First 32 bytes is the offset to the array
-      // Next 32 bytes is the array length
-      const arrayLengthHex = data.slice(64, 128);
-      const arrayLength = parseInt(arrayLengthHex, 16);
-
-      const amounts: number[] = [];
-
-      // Read each amount (32 bytes each)
-      for (let i = 0; i < arrayLength; i++) {
-        const start = 128 + i * 64;
-        const end = start + 64;
-        const amountHex = data.slice(start, end);
-        const amount = parseInt(amountHex, 16);
-        amounts.push(amount);
-      }
-
-      return amounts;
-    } catch (error) {
-      console.error("Failed to decode amounts:", error);
-      return null;
-    }
-  }
-
-  async executeSwap(params: SwapParams): Promise<string> {
-    if (!this.web3Provider) {
-      throw new Error("Wallet not connected");
-    }
-
-    const {
-      inputToken,
-      outputToken,
-      inputAmount,
-      slippageTolerance,
-      recipient,
-      deadline,
-    } = params;
-
-    try {
-      // Get user's address
-      const accounts = await this.web3Provider.request({
-        method: "eth_requestAccounts",
-      });
-
-      if (!accounts || accounts.length === 0) {
-        throw new Error("No wallet address found");
-      }
-
-      const userAddress = recipient || accounts[0];
-      const swapDeadline = deadline || Math.floor(Date.now() / 1000) + 1200; // 20 minutes from now
-
-      // Calculate minimum output amount with slippage
-      const quote = await this.getSwapQuote(params);
-      if (!quote) {
-        throw new Error("Unable to get swap quote");
-      }
-
-      const minimumOutput = quote.minimumReceived;
-
-      // Convert amounts to wei (assuming 18 decimals for simplicity)
-      const inputAmountWei = `0x${Math.floor(
-        parseFloat(inputAmount) * Math.pow(10, inputToken.decimals)
-      ).toString(16)}`;
-      const minimumOutputWei = `0x${Math.floor(
-        parseFloat(minimumOutput) * Math.pow(10, outputToken.decimals)
-      ).toString(16)}`;
-      const deadlineHex = `0x${swapDeadline.toString(16)}`;
-
-      // Check if input token is native BCT
-      const isNativeInput =
-        inputToken.address === "0x0000000000000000000000000000000000000000";
-      const isNativeOutput =
-        outputToken.address === "0x0000000000000000000000000000000000000000";
-
-      let txParams: any = {
-        from: userAddress,
-        to: DEX_CONFIG.ROUTER_V2,
-        gas: "0x61A80", // 400,000 gas limit
-      };
-
-      if (isNativeInput && !isNativeOutput) {
-        // Swapping BCT for tokens - call swapExactETHForTokens
-        const data = this.encodeSwapExactETHForTokens(
-          minimumOutputWei,
-          [DEX_CONFIG.WETH, outputToken.address],
-          userAddress,
-          deadlineHex
-        );
-
-        txParams.data = data;
-        txParams.value = inputAmountWei; // Send BCT value
-      } else if (!isNativeInput && isNativeOutput) {
-        // Swapping tokens for BCT - call swapExactTokensForETH
-        // First check/approve token allowance
-        await this.ensureTokenAllowance(
-          inputToken.address,
-          userAddress,
-          inputAmountWei
-        );
-
-        const data = this.encodeSwapExactTokensForETH(
-          inputAmountWei,
-          minimumOutputWei,
-          [inputToken.address, DEX_CONFIG.WETH],
-          userAddress,
-          deadlineHex
-        );
-
-        txParams.data = data;
-      } else if (!isNativeInput && !isNativeOutput) {
-        // Swapping tokens for tokens - call swapExactTokensForTokens
-        // First check/approve token allowance
-        await this.ensureTokenAllowance(
-          inputToken.address,
-          userAddress,
-          inputAmountWei
-        );
-
-        const data = this.encodeSwapExactTokensForTokens(
-          inputAmountWei,
-          minimumOutputWei,
-          [inputToken.address, outputToken.address],
-          userAddress,
-          deadlineHex
-        );
-
-        txParams.data = data;
-      } else {
-        throw new Error("Cannot swap BCT for BCT");
-      }
-
-      // Send transaction via MetaMask
-      const txHash = await this.web3Provider.request({
-        method: "eth_sendTransaction",
-        params: [txParams],
-      });
-
-      console.log("Transaction sent:", txHash);
-      return txHash;
-    } catch (error) {
-      console.error("Failed to execute swap:", error);
-      throw error;
-    }
-  }
-
-  private async ensureTokenAllowance(
-    tokenAddress: string,
-    userAddress: string,
-    requiredAmount: string
-  ): Promise<void> {
-    try {
-      // Check current allowance
-      const allowanceData = this.encodeTokenAllowance(
-        userAddress,
-        DEX_CONFIG.ROUTER_V2
+      const decoded = AbiCoder.defaultAbiCoder().decode(
+        ["uint256[]"],
+        amountsOutEncoded
       );
-
-      const allowanceResult = await this.web3Provider.request({
-        method: "eth_call",
-        params: [
-          {
-            to: tokenAddress,
-            data: allowanceData,
-          },
-          "latest",
-        ],
-      });
-
-      const currentAllowance = parseInt(allowanceResult, 16);
-      const required = parseInt(requiredAmount, 16);
-
-      if (currentAllowance < required) {
-        // Need to approve more tokens
-        const approveData = this.encodeTokenApprove(
-          DEX_CONFIG.ROUTER_V2,
-          "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-        ); // Max approval
-
-        const approveTx = await this.web3Provider.request({
-          method: "eth_sendTransaction",
-          params: [
-            {
-              from: userAddress,
-              to: tokenAddress,
-              data: approveData,
-              gas: "0x15F90", // 90,000 gas limit for approval
-            },
-          ],
-        });
-
-        console.log("Approval transaction sent:", approveTx);
-
-        // Wait for approval to be mined
-        await this.waitForTransaction(approveTx);
-        console.log("Token approval confirmed");
+      if (decoded && decoded[0] && Array.isArray(decoded[0])) {
+        return decoded[0].map((amount: any) => BigInt(amount.toString()));
       }
+      return [];
     } catch (error) {
-      console.error("Failed to ensure token allowance:", error);
-      throw new Error("Failed to approve token spending");
+      console.error("Error decoding amounts out:", error);
+      return [];
     }
   }
 
-  // Helper functions to encode contract calls
-  private encodeSwapExactETHForTokens(
-    amountOutMin: string,
-    path: string[],
-    to: string,
-    deadline: string
-  ): string {
-    // swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline)
-    // Function selector: 0x7ff36ab5
-    const functionSelector = "0x7ff36ab5";
-
-    // Encode parameters (simplified - in production use a proper ABI encoder)
-    const encodedParams = this.encodeParameters(
-      ["uint256", "address[]", "address", "uint256"],
-      [amountOutMin, path, to, deadline]
-    );
-
-    return functionSelector + encodedParams.slice(2);
-  }
-
-  private encodeSwapExactTokensForETH(
-    amountIn: string,
-    amountOutMin: string,
-    path: string[],
-    to: string,
-    deadline: string
-  ): string {
-    // swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
-    // Function selector: 0x18cbafe5
-    const functionSelector = "0x18cbafe5";
-
-    const encodedParams = this.encodeParameters(
-      ["uint256", "uint256", "address[]", "address", "uint256"],
-      [amountIn, amountOutMin, path, to, deadline]
-    );
-
-    return functionSelector + encodedParams.slice(2);
-  }
-
-  private encodeSwapExactTokensForTokens(
-    amountIn: string,
-    amountOutMin: string,
-    path: string[],
-    to: string,
-    deadline: string
-  ): string {
-    // swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
-    // Function selector: 0x38ed1739
-    const functionSelector = "0x38ed1739";
-
-    const encodedParams = this.encodeParameters(
-      ["uint256", "uint256", "address[]", "address", "uint256"],
-      [amountIn, amountOutMin, path, to, deadline]
-    );
-
-    return functionSelector + encodedParams.slice(2);
-  }
-
-  private encodeTokenApprove(spender: string, amount: string): string {
-    // approve(address spender, uint256 amount)
-    // Function selector: 0x095ea7b3
-    const functionSelector = "0x095ea7b3";
-
-    const encodedParams = this.encodeParameters(
-      ["address", "uint256"],
-      [spender, amount]
-    );
-
-    return functionSelector + encodedParams.slice(2);
-  }
-
-  private encodeTokenAllowance(owner: string, spender: string): string {
-    // allowance(address owner, address spender)
-    // Function selector: 0xdd62ed3e
-    const functionSelector = "0xdd62ed3e";
-
-    const encodedParams = this.encodeParameters(
-      ["address", "address"],
-      [owner, spender]
-    );
-
-    return functionSelector + encodedParams.slice(2);
-  }
-
-  private encodeParameters(types: string[], values: any[]): string {
-    // Simplified parameter encoding - in production, use ethers.js or web3.js ABI encoder
-    let encoded = "0x";
-    let dynamicPart = "";
-    let offset = types.length * 32; // Initial offset for dynamic data
-
-    for (let i = 0; i < types.length; i++) {
-      const type = types[i];
-      const value = values[i];
-
-      if (type === "uint256") {
-        let hex: string;
-        if (typeof value === "string" && value.startsWith("0x")) {
-          hex = value.slice(2);
-        } else if (typeof value === "string") {
-          hex = parseInt(value, 16).toString(16);
-        } else {
-          hex = value.toString(16);
-        }
-        encoded += hex.padStart(64, "0");
-      } else if (type === "address") {
-        const addr = value.toLowerCase().startsWith("0x")
-          ? value.slice(2)
-          : value;
-        encoded += addr.padStart(64, "0");
-      } else if (type === "address[]") {
-        // For array, encode offset to where array data starts
-        encoded += offset.toString(16).padStart(64, "0");
-
-        // Prepare array data for dynamic part
-        const arrayLength = value.length.toString(16).padStart(64, "0");
-        let arrayData = arrayLength;
-
-        for (const addr of value) {
-          const cleanAddr = addr.toLowerCase().startsWith("0x")
-            ? addr.slice(2)
-            : addr;
-          arrayData += cleanAddr.padStart(64, "0");
-        }
-
-        dynamicPart += arrayData;
-        offset += (1 + value.length) * 32; // Update offset for next dynamic type
-      }
+  public encodePath(path: string[], fees: number[]): string {
+    // This is a simplified example. Uniswap V3 path encoding is more complex.
+    // For V2, path is just an array of addresses. This method might be for V3 or custom router.
+    if (path.length - 1 !== fees.length && fees.length > 0) {
+      // fees can be empty for simple V2 paths
+      throw new Error("Path/fee mismatch for encoding");
     }
-
-    return encoded + dynamicPart;
-  }
-
-  async getTransactionReceipt(txHash: string) {
-    if (!this.web3Provider) return null;
-
-    try {
-      return await this.web3Provider.request({
-        method: "eth_getTransactionReceipt",
-        params: [txHash],
-      });
-    } catch (error) {
-      console.error("Failed to get transaction receipt:", error);
-      return null;
+    let encoded = "0x" + path[0].slice(2);
+    for (let i = 0; i < fees.length; i++) {
+      encoded += fees[i].toString(16).padStart(6, "0") + path[i + 1].slice(2);
     }
-  }
-
-  async waitForTransaction(txHash: string, confirmations: number = 1) {
-    // Simple polling implementation for transaction confirmation
-    return new Promise((resolve, reject) => {
-      const checkTransaction = async () => {
-        try {
-          const receipt = await this.getTransactionReceipt(txHash);
-          if (receipt && receipt.blockNumber) {
-            resolve(receipt);
-          } else {
-            setTimeout(checkTransaction, 2000); // Check every 2 seconds
-          }
-        } catch (error) {
-          reject(error);
-        }
-      };
-      checkTransaction();
-    });
+    return encoded;
   }
 }
 
-// Singleton instance
-export const dexService = new DexService();
-export default dexService;
+// Initialize with undefined provider. It should be set by the application context later.
+export const dexService = new DexService(undefined); // Constructor will call init(undefined)
+
+export const initializeDexService = (provider: BrowserProvider) => {
+  console.log("initializeDexService: Calling dexService.init() with provider.");
+  dexService.init(provider); // Use the init method of the global dexService instance
+};

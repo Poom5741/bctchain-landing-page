@@ -1,104 +1,189 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
-import { Progress } from "@/components/ui/progress";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ArrowUpDown,
-  TrendingUp,
-  TrendingDown,
-  ArrowRight,
-  AlertTriangle,
-  Loader2,
-  Settings,
-  Clock,
-  Zap,
-  ChevronDown,
-  Search,
-  Wallet,
-  History,
+  AlertCircle,
   Info,
-  RefreshCw,
-  X,
+  ExternalLink,
 } from "lucide-react";
-import { WalletButton } from "@/components/wallet-button";
+import { WalletButton } from "./wallet-button";
 import { useWallet } from "@/hooks/use-wallet";
+import { TokenListService, TokenInfo, DEX_CONFIG } from "@/lib/token-list";
+import { dexService, SwapQuote, SwapParams } from "@/lib/dex-service";
 
-// Mock data and types
-interface Token {
-  symbol: string;
-  name: string;
-  price: number;
-  change: string;
-  logo: string;
-  decimals: number;
-  chainId: number;
-  balance?: string;
-}
+export function TradingInterface() {
+  const { connection, switchToBCTChain } = useWallet();
+  const [availableTokens, setAvailableTokens] = useState<TokenInfo[]>([]);
+  const [fromToken, setFromToken] = useState<TokenInfo | null>(null);
+  const [toToken, setToToken] = useState<TokenInfo | null>(null);
+  const [fromAmount, setFromAmount] = useState("");
+  const [toAmount, setToAmount] = useState("");
+  const [quote, setQuote] = useState<SwapQuote | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingTokens, setIsLoadingTokens] = useState(true);
+  const [noLiquidity, setNoLiquidity] = useState(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
 
-interface SwapQuote {
-  fromAmount: string;
-  toAmount: string;
-  priceImpact: number;
-  fee: number;
-  route: string[];
-  estimatedGas: string;
-  expiresAt: number;
-}
+  // Load tokens from TokenListService
+  useEffect(() => {
+    const loadTokens = async () => {
+      try {
+        setIsLoadingTokens(true);
+        const tokenList = await TokenListService.fetchTokenList();
+        setAvailableTokens(tokenList.tokens);
+        
+        // Set default tokens if available
+        if (tokenList.tokens.length >= 2) {
+          setFromToken(tokenList.tokens[0]);
+          setToToken(tokenList.tokens[1]);
+        }
+      } catch (error) {
+        console.error("Failed to load tokens:", error);
+      } finally {
+        setIsLoadingTokens(false);
+      }
+    };
 
-interface Transaction {
-  id: string;
-  fromToken: string;
-  toToken: string;
-  fromAmount: string;
-  toAmount: string;
-  status: "pending" | "completed" | "failed";
-  timestamp: number;
-  hash?: string;
-}
+    loadTokens();
+  }, []);
 
-// Mock token data - moved outside component to prevent re-renders
-const getMockTokens = (): Token[] => [
-  {
-    symbol: "sBTC",
-    name: "Synthetic Bitcoin",
-    price: 43250.0,
-    change: "+2.4%",
-    logo: "₿",
-    decimals: 8,
-    chainId: 1,
-    balance: "0.12345678",
-  },
-  {
-    symbol: "sETH",
+  // Get real quote when input changes
+  useEffect(() => {
+    if (fromToken && toToken && fromAmount && parseFloat(fromAmount) > 0) {
+      setIsLoading(true);
+
+      const timer = setTimeout(async () => {
+        try {
+          const swapParams: SwapParams = {
+            inputToken: fromToken,
+            outputToken: toToken,
+            inputAmount: fromAmount,
+            slippageTolerance: 50, // 0.5% in basis points
+          };
+
+          console.log("Getting real quote for:", swapParams);
+          const quote = await dexService.getSwapQuote(swapParams);
+
+          if (quote) {
+            console.log("Real quote received:", quote);
+            setQuote(quote);
+            setToAmount(quote.outputAmount);
+            setNoLiquidity(false);
+          } else {
+            console.log("No liquidity available for this trading pair");
+            setQuote(null);
+            setToAmount("0");
+            setNoLiquidity(true);
+          }
+        } catch (error) {
+          console.error("Failed to get quote:", error);
+          setQuote(null);
+          setToAmount("0");
+          setNoLiquidity(true);
+        } finally {
+          setIsLoading(false);
+        }
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    } else {
+      setQuote(null);
+      setToAmount("");
+      setNoLiquidity(false);
+      setIsLoading(false);
+    }
+  }, [fromToken, toToken, fromAmount]);
+
+  const handleSwapTokens = (event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const tempToken = fromToken;
+    const tempAmount = fromAmount;
+    setFromToken(toToken);
+    setToToken(tempToken);
+    setFromAmount(toAmount);
+    setToAmount(tempAmount);
+  };
+
+  const handleSwap = async (event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if (!fromToken || !toToken || !fromAmount || !quote || !connection?.address)
+      return;
+
+    try {
+      setIsLoading(true);
+      setTxHash(null);
+      console.log("Starting swap transaction...");
+
+      const swapParams: SwapParams = {
+        inputToken: fromToken,
+        outputToken: toToken,
+        inputAmount: fromAmount,
+        slippageTolerance: 50, // 0.5% in basis points
+        recipient: connection.address,
+        deadline: Math.floor(Date.now() / 1000) + 1200, // 20 minutes
+      };
+
+      console.log("Swap parameters:", swapParams);
+
+      // Execute real swap transaction
+      const txHash = await dexService.executeSwap(swapParams);
+
+      if (txHash) {
+        setTxHash(txHash);
+        // Reset form after successful transaction submission
+        setFromAmount("");
+        setToAmount("");
+        setQuote(null);
+
+        console.log("Swap transaction submitted successfully!");
+        console.log("Transaction hash:", txHash);
+      }
+    } catch (error: any) {
+      console.error("Swap failed:", error);
+
+      // Handle specific error types
+      if (error.code === 4001) {
+        console.log("User rejected the transaction");
+      } else if (error.message?.includes("insufficient funds")) {
+        console.log("Insufficient funds for transaction");
+      } else if (error.message?.includes("User denied")) {
+        console.log("User denied transaction signature");
+      } else {
+        console.log("Transaction failed:", error.message);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isLoadingTokens) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <Card className="border-white/10 bg-white/5 backdrop-blur-xl">
+          <CardContent className="p-12">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+              <p className="text-white">Loading tokens...</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
     name: "Synthetic Ethereum",
     price: 2680.0,
     change: "+1.8%",
