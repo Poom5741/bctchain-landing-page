@@ -354,10 +354,10 @@ export function TradingInterface() {
               )}
             </div>
             <div className="bg-white/5 rounded-lg p-4 border border-white/10">
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-3 min-w-0">
                 <Button
                   variant="outline"
-                  className="w-40 bg-white/5 border-white/10 text-white justify-between"
+                  className="w-40 bg-white/5 border-white/10 text-white justify-between shrink-0"
                   onClick={() => setShowTokenSelect("from")}
                 >
                   {fromToken ? (
@@ -372,12 +372,12 @@ export function TradingInterface() {
                   )}
                   <ChevronDown className="w-4 h-4" />
                 </Button>
-                <div className="flex-1 relative">
+                <div className="flex-1 relative min-w-0">
                   <Input
                     placeholder="0.00"
                     value={fromAmount}
                     onChange={(e) => setFromAmount(e.target.value)}
-                    className="bg-white/5 border-white/10 text-white text-right text-lg pr-16"
+                    className="bg-white/5 border-white/10 text-white text-right text-lg pr-20 min-w-[180px]"
                     type="number"
                     step="any"
                     min="0"
@@ -386,7 +386,7 @@ export function TradingInterface() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-6 px-2 text-xs text-blue-400 hover:text-blue-300"
+                      className="h-6 px-1.5 text-xs text-blue-400 hover:text-blue-300 shrink-0"
                       onClick={() => setFromAmount("500")}
                     >
                       50%
@@ -394,7 +394,7 @@ export function TradingInterface() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-6 px-2 text-xs text-blue-400 hover:text-blue-300"
+                      className="h-6 px-1.5 text-xs text-blue-400 hover:text-blue-300 shrink-0"
                       onClick={() => setFromAmount("1000")}
                     >
                       MAX
