@@ -1,0 +1,66 @@
+{
+  "name": "BCTChain Default Token List",
+  "logoURI": "https://bctchain.com/logo.png",
+  "keywords": ["tokens", "defi", "trading", "bctchain"],
+  "version": {
+    "major": 1,
+    "minor": 0,
+    "patch": 0
+  },
+  "tokens": [
+    {
+      "chainId": 1190,
+      "address": "0x0000000000000000000000000000000000000000",
+      "symbol": "BCT",
+      "name": "BCT Chain Token",
+      "decimals": 18,
+      "logoURI": "https://bctchain.com/tokens/bct.png",
+      "tags": ["native"]
+    },
+    {
+      "chainId": 1190,
+      "address": "0xF9b35E5cD6B45459863B64d9208874DA5f0E43A0",
+      "symbol": "RAJ",
+      "name": "Rajavej coin",
+      "decimals": 18,
+      "logoURI": "https://bctchain.com/tokens/raj.png",
+      "tags": ["token"]
+    },
+    {
+      "chainId": 1190,
+      "address": "0x774F2aBBcAB2262c2E2bb15520Ddb788b84715b5",
+      "symbol": "LISA",
+      "name": "LISA COIN",
+      "decimals": 18,
+      "logoURI": "https://bctchain.com/tokens/lisa.png",
+      "tags": ["token"]
+    },
+    {
+      "chainId": 1190,
+      "address": "0x420000000000000000000000000000000000000",
+      "symbol": "WETH",
+      "name": "Wrapped Ether",
+      "decimals": 18,
+      "logoURI": "https://bctchain.com/tokens/weth.png",
+      "tags": ["wrapped"]
+    },
+    {
+      "chainId": 1190,
+      "address": "0x49be54686D911D454bB0887FdE424e3C617dA683",
+      "symbol": "USDG",
+      "name": "USD Gold",
+      "decimals": 18,
+      "logoURI": "https://bctchain.com/tokens/usdg.png",
+      "tags": ["stablecoin"]
+    },
+    {
+      "chainId": 1190,
+      "address": "0xa74d1fcc64cD9F701B42224A22778B1dCc447FCE",
+      "symbol": "WBCT",
+      "name": "Wrapped BCT",
+      "decimals": 18,
+      "logoURI": "https://bctchain.com/tokens/wbct.png",
+      "tags": ["wrapped"]
+    }
+  ]
+}

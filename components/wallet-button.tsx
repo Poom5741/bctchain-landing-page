@@ -42,16 +42,26 @@ export function WalletButton({
     formatBalance,
     supportedWallets,
     bctChain,
+    switchToBCTChain,
+    isWalletInstalled,
   } = useWallet();
   const [showModal, setShowModal] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
 
   const handleConnect = async (wallet: WalletProvider) => {
-    await connect(wallet.id);
-    setShowModal(false);
-    if (connection.isConnected) {
-      toast.success(`Connected to ${wallet.name}`, {
-        description: "Your wallet has been connected successfully.",
+    try {
+      await connect(wallet.id);
+      setShowModal(false);
+      if (connection.isConnected) {
+        toast.success(`Connected to ${wallet.name}`, {
+          description: "Your wallet has been connected successfully.",
+        });
+      }
+    } catch (error) {
+      console.error("Connection error:", error);
+      toast.error("Failed to connect wallet", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
       });
     }
   };
@@ -143,38 +153,69 @@ export function WalletButton({
               <div className="text-white font-medium mb-3">
                 Choose your wallet:
               </div>
-              {supportedWallets.map((wallet) => (
-                <Button
-                  key={wallet.id}
-                  variant="ghost"
-                  className="w-full justify-start h-auto p-4 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all duration-200 group"
-                  onClick={() => handleConnect(wallet)}
-                  disabled={connection.isConnecting}
-                >
-                  <div className="flex items-center space-x-3 w-full">
-                    <span className="text-2xl">{wallet.icon}</span>
-                    <div className="flex-1 text-left">
-                      <div className="text-white font-medium group-hover:text-blue-300 transition-colors">
-                        {wallet.name}
+              {supportedWallets.map((wallet) => {
+                const isInstalled = isWalletInstalled(wallet.id);
+                return (
+                  <Button
+                    key={wallet.id}
+                    variant="ghost"
+                    className="w-full justify-start h-auto p-4 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all duration-200 group"
+                    onClick={() => {
+                      if (isInstalled) {
+                        handleConnect(wallet);
+                      } else {
+                        // Redirect to install page
+                        const installUrls = {
+                          metamask: "https://metamask.io/download/",
+                          coinbase: "https://www.coinbase.com/wallet/downloads",
+                          walletconnect: "#", // WalletConnect doesn't need installation
+                        };
+                        if (
+                          installUrls[wallet.id as keyof typeof installUrls] !==
+                          "#"
+                        ) {
+                          window.open(
+                            installUrls[wallet.id as keyof typeof installUrls],
+                            "_blank"
+                          );
+                        }
+                      }
+                    }}
+                    disabled={connection.isConnecting}
+                  >
+                    <div className="flex items-center space-x-3 w-full">
+                      <span className="text-2xl">{wallet.icon}</span>
+                      <div className="flex-1 text-left">
+                        <div className="text-white font-medium group-hover:text-blue-300 transition-colors">
+                          {wallet.name}
+                        </div>
+                        <div className="text-sm text-gray-400">
+                          {wallet.description}
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-400">
-                        {wallet.description}
-                      </div>
+                      {!isInstalled && (
+                        <Badge
+                          variant="outline"
+                          className="text-xs text-orange-400 border-orange-600"
+                        >
+                          Install
+                        </Badge>
+                      )}
+                      {isInstalled && (
+                        <Badge
+                          variant="outline"
+                          className="text-xs text-green-400 border-green-600"
+                        >
+                          Ready
+                        </Badge>
+                      )}
+                      {connection.isConnecting && (
+                        <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                      )}
                     </div>
-                    {!wallet.installed && (
-                      <Badge
-                        variant="outline"
-                        className="text-xs text-gray-400 border-gray-600"
-                      >
-                        Install
-                      </Badge>
-                    )}
-                    {connection.isConnecting && (
-                      <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-                    )}
-                  </div>
-                </Button>
-              ))}
+                  </Button>
+                );
+              })}
             </div>
 
             <div className="pt-4 text-center">
@@ -194,45 +235,85 @@ export function WalletButton({
     );
   }
 
-  // Connected state
+  // Connected state - show account info
   return (
     <Dialog open={showAccountModal} onOpenChange={setShowAccountModal}>
       <DialogTrigger asChild>
         <Button
-          variant="outline"
           className={`
-            bg-white/5 border-white/10 text-white hover:bg-white/10 
-            hover:border-white/20 transition-all duration-200 group ${className}
+            relative overflow-hidden bg-gradient-to-r from-green-500 to-emerald-600 
+            hover:from-green-600 hover:to-emerald-700 text-white border-0 
+            transition-all duration-300 hover:scale-105 hover:shadow-2xl 
+            hover:shadow-green-500/25 group ${className}
           `}
+          variant={variant === "compact" ? "default" : "default"}
           size={variant === "compact" ? "sm" : "default"}
         >
-          <div className="flex items-center space-x-2">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="font-mono">
-              {formatAddress(connection.address)}
-            </span>
-            {variant !== "compact" && (
-              <>
-                <Separator orientation="vertical" className="h-4 bg-white/20" />
-                <span className="text-sm">
-                  {formatBalance(connection.balance)} BCT
-                </span>
-              </>
-            )}
-            <ChevronDown className="w-4 h-4 group-hover:rotate-180 transition-transform duration-200" />
+          {/* Network Status Indicator */}
+          <div className="absolute top-1 right-1">
+            <div
+              className={`w-2 h-2 rounded-full ${
+                connection.isCorrectNetwork
+                  ? "bg-green-400 animate-pulse"
+                  : "bg-orange-400 animate-pulse"
+              }`}
+            />
           </div>
+
+          <Wallet className="w-4 h-4 mr-2" />
+          <span className="font-medium">
+            {formatAddress(connection.address)}
+          </span>
+          {!connection.isCorrectNetwork && (
+            <AlertCircle className="w-4 h-4 ml-2 text-orange-300" />
+          )}
+          {variant !== "compact" && <ChevronDown className="w-4 h-4 ml-2" />}
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="bg-slate-900/95 border-white/10 backdrop-blur-xl max-w-md">
+      <DialogContent className="sm:max-w-md bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 border-white/10">
         <DialogHeader>
-          <DialogTitle className="text-white text-xl flex items-center">
-            <CheckCircle2 className="w-6 h-6 mr-3 text-green-400" />
+          <DialogTitle className="text-white flex items-center">
+            <Wallet className="w-5 h-5 mr-2" />
             Wallet Connected
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6 pt-4">
+        <div className="space-y-4">
+          {/* Network Status */}
+          {!connection.isCorrectNetwork && (
+            <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
+              <div className="flex items-center space-x-2 mb-2">
+                <AlertCircle className="w-4 h-4 text-orange-400" />
+                <span className="text-orange-200 text-sm font-medium">
+                  Wrong Network
+                </span>
+              </div>
+              <p className="text-orange-200/80 text-xs mb-3">
+                Please switch to BCTChain network to use the DEX
+              </p>
+              <Button
+                onClick={switchToBCTChain}
+                className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+                size="sm"
+              >
+                <Zap className="w-4 h-4 mr-2" />
+                Switch to BCTChain
+              </Button>
+            </div>
+          )}
+
+          {connection.isCorrectNetwork && (
+            <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+              <div className="flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 text-green-400" />
+                <span className="text-green-200 text-sm font-medium">
+                  Connected to {connection.networkName}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Account Info */}
           <div className="p-4 rounded-lg bg-white/5 border border-white/10">
             <div className="flex items-center justify-between mb-3">
@@ -288,9 +369,31 @@ export function WalletButton({
               <div>
                 <div className="text-gray-400 text-sm">Network</div>
                 <div className="text-white font-medium">{bctChain.name}</div>
+                {connection.chainId !== bctChain.id && (
+                  <div className="text-orange-400 text-xs mt-1">
+                    Wrong network
+                  </div>
+                )}
               </div>
-              <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
-                <Zap className="w-4 h-4 text-white" />
+              <div className="flex items-center space-x-2">
+                {connection.chainId !== bctChain.id && (
+                  <Button
+                    size="sm"
+                    onClick={switchToBCTChain}
+                    className="bg-orange-500/20 text-orange-300 hover:bg-orange-500/30 border-orange-500/30"
+                  >
+                    Switch Network
+                  </Button>
+                )}
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                    connection.chainId === bctChain.id
+                      ? "bg-gradient-to-r from-blue-500 to-purple-600"
+                      : "bg-red-500/30"
+                  }`}
+                >
+                  <Zap className="w-4 h-4 text-white" />
+                </div>
               </div>
             </div>
           </div>
