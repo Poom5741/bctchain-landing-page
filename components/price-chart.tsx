@@ -127,13 +127,20 @@ export function PriceChart({ inputToken, outputToken, className = "" }: PriceCha
   const [isInverted, setIsInverted] = useState(false);
 
   // Helper function to fix USDG decimal calculation in prices
-  const fixUSDGPrice = (price: number, outputTokenSymbol: string) => {
-    // Special handling for USDG price calculation
+  const fixUSDGPrice = (price: number, outputTokenSymbol: string, inputTokenSymbol: string) => {
+    // Special handling for USDG price calculation in both directions
     if (outputTokenSymbol === "USDG" && price > 1000000) {
-      // Original price ~1596404540.72, target price ~1.6
-      // Need to divide by 10^9 (1,000,000,000) to get correct price
+      // BCT/USDG: Original price ~1596404540.72, target price ~1.6
+      // Need to divide by 10^9 to get correct price
       return price / 1000000000;
     }
+    
+    if (inputTokenSymbol === "USDG" && price < 0.000001) {
+      // USDG/BCT: Original price ~6.359e-10, target price ~0.625 (1/1.6)
+      // Need to multiply by 10^9 to get correct price
+      return price * 1000000000;
+    }
+    
     return price;
   };
 
@@ -203,7 +210,7 @@ export function PriceChart({ inputToken, outputToken, className = "" }: PriceCha
             let price = isToken0Input ? (reserve1 / reserve0) : (reserve0 / reserve1);
             
             // Apply USDG decimal fix to current price
-            price = fixUSDGPrice(price, outputToken.symbol);
+            price = fixUSDGPrice(price, outputToken.symbol, inputToken.symbol);
             
             setCurrentPrice(price);
           } else {
@@ -281,7 +288,7 @@ export function PriceChart({ inputToken, outputToken, className = "" }: PriceCha
               price = isInverted ? (reserve0 / reserve1) : (reserve1 / reserve0);
               
               // Apply USDG decimal fix to historical price data
-              price = fixUSDGPrice(price, outputToken.symbol);
+              price = fixUSDGPrice(price, outputToken.symbol, inputToken.symbol);
             }
             
             return {
@@ -326,10 +333,10 @@ export function PriceChart({ inputToken, outputToken, className = "" }: PriceCha
 
   const formatPrice = (price: number) => {
     // Apply USDG fix before formatting
-    const correctedPrice = fixUSDGPrice(price, outputToken?.symbol || "");
+    const correctedPrice = fixUSDGPrice(price, outputToken?.symbol || "", inputToken?.symbol || "");
     
-    // For USDG prices, always show 4 decimal places and avoid scientific notation
-    if (outputToken?.symbol === "USDG") {
+    // For USDG pairs (either direction), always show 4 decimal places and avoid scientific notation
+    if (outputToken?.symbol === "USDG" || inputToken?.symbol === "USDG") {
       return correctedPrice.toFixed(4);
     }
     
