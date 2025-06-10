@@ -12,6 +12,7 @@
 **Last Modified:** ✅ `Tue, 10 Jun 2025 04:13:17 GMT`
 
 **JSON Content:**
+
 - ✅ Name: "BCTChain Default Token List"
 - ✅ Version: 1.0.1
 - ✅ Tokens: 6 configured tokens
@@ -20,26 +21,28 @@
 ### 🔧 Code Integration Updates
 
 **Environment Configuration:**
+
 ```bash
 # Updated .env.local
 NEXT_PUBLIC_TOKEN_LIST_URL=https://pub-65a77754903f4bddb48f3852b3967938.r2.dev/bctchain-token-list.json
 ```
 
 **Token List Service:**
+
 - ✅ Will now fetch from live R2 endpoint
 - ✅ Maintains local fallback for development
 - ✅ Robust error handling in place
 
 ### 🪙 Token Configuration Status
 
-| Token | Symbol | Status | Logo URL |
-|-------|--------|--------|----------|
-| BCT Chain Token | BCT | ✅ Live | `/bct.png` (⏳ pending) |
-| Rajavej Coin | RAJ | ✅ Live | `/raj.png` (⏳ pending) |
-| LISA Coin | LISA | ✅ Live | `/lisa.png` (⏳ pending) |
-| Wrapped Ether | WETH | ✅ Live | `/weth.png` (⏳ pending) |
-| USD Gold | USDG | ✅ Live | `/usdg.png` (⏳ pending) |
-| Wrapped BCT | WBCT | ✅ Live | `/wbct.png` (⏳ pending) |
+| Token           | Symbol | Status  | Logo URL                 |
+| --------------- | ------ | ------- | ------------------------ |
+| BCT Chain Token | BCT    | ✅ Live | `/bct.png` (⏳ pending)  |
+| Rajavej Coin    | RAJ    | ✅ Live | `/raj.png` (⏳ pending)  |
+| LISA Coin       | LISA   | ✅ Live | `/lisa.png` (⏳ pending) |
+| Wrapped Ether   | WETH   | ✅ Live | `/weth.png` (⏳ pending) |
+| USD Gold        | USDG   | ✅ Live | `/usdg.png` (⏳ pending) |
+| Wrapped BCT     | WBCT   | ✅ Live | `/wbct.png` (⏳ pending) |
 
 ### 🎯 What's Working Now
 
@@ -54,6 +57,7 @@ NEXT_PUBLIC_TOKEN_LIST_URL=https://pub-65a77754903f4bddb48f3852b3967938.r2.dev/b
 **Next Step:** Upload PNG logo files to complete visual upgrade
 
 **Logo Upload URLs:**
+
 - `https://a1d68d92ed0cda5cea113ff208eba3a1.r2.cloudflarestorage.com/bct-landing-tokenlist/bct.png`
 - `https://a1d68d92ed0cda5cea113ff208eba3a1.r2.cloudflarestorage.com/bct-landing-tokenlist/raj.png`
 - `https://a1d68d92ed0cda5cea113ff208eba3a1.r2.cloudflarestorage.com/bct-landing-tokenlist/lisa.png`
@@ -90,6 +94,7 @@ curl -s "https://pub-65a77754903f4bddb48f3852b3967938.r2.dev/bctchain-token-list
 ## 🎉 MIGRATION STATUS: SUCCESS!
 
 ### ✅ Completed
+
 - [x] Created TokenLogo component with fallbacks
 - [x] Updated all trading interfaces to use TokenLogo
 - [x] Implemented robust token list service
@@ -99,6 +104,7 @@ curl -s "https://pub-65a77754903f4bddb48f3852b3967938.r2.dev/bctchain-token-list
 - [x] Verified R2 endpoint functionality
 
 ### 🎨 Optional Next Steps
+
 - [ ] Create and upload logo PNG files
 - [ ] Set up custom domain for R2 (optional)
 - [ ] Add more tokens to the list (optional)
@@ -107,5 +113,5 @@ curl -s "https://pub-65a77754903f4bddb48f3852b3967938.r2.dev/bctchain-token-list
 
 **🎯 RESULT: Your BCTChain DEX now uses professional R2-hosted token data instead of emoji placeholders!**
 
-*Upload completed: June 10, 2025*  
-*Status: LIVE AND FUNCTIONAL* ✅
+_Upload completed: June 10, 2025_  
+_Status: LIVE AND FUNCTIONAL_ ✅

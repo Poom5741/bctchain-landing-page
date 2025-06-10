@@ -117,7 +117,7 @@ export const EXAMPLE_TOKEN_LIST: TokenList = {
     },
     {
       chainId: DEX_CONFIG.CHAIN_ID,
-      address: "0x420000000000000000000000000000000000000",
+      address: "0x4200000000000000000000000000000000000006",
       symbol: "WETH",
       name: "Wrapped Ether",
       decimals: 18,
@@ -130,7 +130,7 @@ export const EXAMPLE_TOKEN_LIST: TokenList = {
       address: "0x49be54686D911D454bB0887FdE424e3C617dA683",
       symbol: "USDG",
       name: "USD Gold",
-      decimals: 18,
+      decimals: 6,
       logoURI:
         "https://a1d68d92ed0cda5cea113ff208eba3a1.r2.cloudflarestorage.com/bct-landing-tokenlist/usdg.png",
       tags: ["stablecoin"],
@@ -138,8 +138,8 @@ export const EXAMPLE_TOKEN_LIST: TokenList = {
     {
       chainId: DEX_CONFIG.CHAIN_ID,
       address: "0xa74d1fcc64cD9F701B42224A22778B1dCc447FCE",
-      symbol: "BCT",
-      name: "BCT Chain Token",
+      symbol: "WBCT",
+      name: "Wrapped BCT",
       decimals: 18,
       logoURI:
         "https://a1d68d92ed0cda5cea113ff208eba3a1.r2.cloudflarestorage.com/bct-landing-tokenlist/bct.png",

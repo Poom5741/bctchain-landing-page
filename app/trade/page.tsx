@@ -1,6 +1,6 @@
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
-import { TradingInterface } from "@/components/trading-interface";
+import { TradingInterfaceWithChart } from "@/components/trading-interface-with-chart";
 import { PoolInterface } from "@/components/pool-interface";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowUpDown, Droplets } from "lucide-react";
@@ -13,7 +13,7 @@ export default function TradePage() {
         <Header />
         <main className="py-20">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="max-w-6xl mx-auto">
+            <div className="max-w-7xl mx-auto">
               <div className="text-center mb-12">
                 <h1 className="text-4xl font-bold text-white mb-4">
                   BCT DEX - Decentralized Exchange
@@ -42,7 +42,7 @@ export default function TradePage() {
                 </TabsList>
 
                 <TabsContent value="trade">
-                  <TradingInterface />
+                  <TradingInterfaceWithChart />
                 </TabsContent>
 
                 <TabsContent value="pools">

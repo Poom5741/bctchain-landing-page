@@ -185,7 +185,7 @@ export class DexService {
   ): string {
     try {
       const result = formatUnits(BigInt(wei), decimals);
-      // console.log(`formatWeiToDecimal: wei=${wei}, decimals=${decimals}, result=${result}`);
+      console.log(`🔢 formatWeiToDecimal: wei=${wei}, decimals=${decimals}, result=${result}`);
       return result;
     } catch (error) {
       console.error(
@@ -277,6 +277,7 @@ export class DexService {
     console.log("Fetching user token balances for:", walletAddress);
 
     const tokens = EXAMPLE_TOKEN_LIST.tokens;
+    console.log("🗂️ Token list being used:", tokens.map(t => `${t.symbol}(${t.decimals}d)`).join(", "));
 
     if (!tokens || tokens.length === 0) {
       console.warn(
@@ -320,11 +321,13 @@ export class DexService {
             symbol: DEX_CONFIG.NATIVE_TOKEN.symbol,
           };
         } else {
+          console.log(`💰 Getting balance for ${token.symbol} (${token.address}) with ${token.decimals} decimals`);
           const balanceData = await this.getTokenBalance(
             walletAddress,
             token.address,
             token.decimals
           );
+          console.log(`💰 ${token.symbol} raw: ${balanceData.wei} wei, formatted: ${balanceData.formatted}`);
           balances[token.address.toLowerCase()] = {
             balance: balanceData.formatted,
             decimals: token.decimals,

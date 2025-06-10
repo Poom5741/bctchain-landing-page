@@ -111,17 +111,17 @@ export function useSwap(): UseSwapReturn {
         // Check if we actually got valid balances
         if (balances && Object.keys(balances).length > 0) {
           setAllTokenBalances(balances);
-          // console.log("Balances refreshed:", balances);
+          console.log("🔍 Balances refreshed:", balances);
 
           if (inputToken) {
-            setInputTokenBalance(
-              balances[inputToken.address.toLowerCase()]?.balance || "0"
-            );
+            const inputBalance = balances[inputToken.address.toLowerCase()]?.balance || "0";
+            console.log(`🔍 Setting ${inputToken.symbol} balance: ${inputBalance} (decimals: ${balances[inputToken.address.toLowerCase()]?.decimals})`);
+            setInputTokenBalance(inputBalance);
           }
           if (outputToken) {
-            setOutputTokenBalance(
-              balances[outputToken.address.toLowerCase()]?.balance || "0"
-            );
+            const outputBalance = balances[outputToken.address.toLowerCase()]?.balance || "0";
+            console.log(`🔍 Setting ${outputToken.symbol} balance: ${outputBalance} (decimals: ${balances[outputToken.address.toLowerCase()]?.decimals})`);
+            setOutputTokenBalance(outputBalance);
           }
         } else {
           console.warn(

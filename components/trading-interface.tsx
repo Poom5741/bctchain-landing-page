@@ -42,7 +42,11 @@ interface SwapQuote {
   expiresAt: number;
 }
 
-export function TradingInterface() {
+interface TradingInterfaceProps {
+  onTokensChange?: (inputToken: TokenInfo | null, outputToken: TokenInfo | null) => void;
+}
+
+export function TradingInterface({ onTokensChange }: TradingInterfaceProps = {}) {
   const { connection, switchToBCTChain } = useWallet();
   const {
     inputToken: fromToken,
@@ -230,8 +234,15 @@ export function TradingInterface() {
     }
   };
 
-  const formatBalance = (balance: string) => {
-    const num = parseFloat(balance);
+  const formatBalance = (balance: string, tokenSymbol?: string) => {
+    let num = parseFloat(balance);
+    
+    // Special handling for USDG - fix the decimal calculation issue
+    if (tokenSymbol === "USDG" && num > 1000000) {
+      // USDG is being calculated with wrong decimals, divide by 10^12 to get correct value
+      num = num / 1000000000000;
+    }
+    
     if (num === 0) return "0";
     if (num < 0.001) return "<0.001";
     if (num < 1) return num.toFixed(6);
@@ -259,16 +270,23 @@ export function TradingInterface() {
     refreshBalances();
   }, [refreshBalances]);
 
+  // Notify parent component when tokens change
+  useEffect(() => {
+    if (onTokensChange) {
+      onTokensChange(fromToken, toToken);
+    }
+  }, [fromToken, toToken, onTokensChange]);
+
   // Replace hardcoded balances with real blockchain data
   const formattedInputBalance = fromToken
-    ? formatBalance(inputTokenBalance)
+    ? formatBalance(inputTokenBalance, fromToken.symbol)
     : "0";
   const formattedOutputBalance = toToken
-    ? formatBalance(outputTokenBalance)
+    ? formatBalance(outputTokenBalance, toToken.symbol)
     : "0";
 
   return (
-    <div className="max-w-md mx-auto space-y-6">
+    <div className="max-w-lg mx-auto space-y-6">
       {/* Error Display */}
       {error && (
         <div className="bg-red-500/20 border border-red-500/30 rounded-lg p-4">
@@ -353,10 +371,10 @@ export function TradingInterface() {
               )}
             </div>
             <div className="bg-white/5 rounded-lg p-4 border border-white/10">
-              <div className="flex items-center space-x-3 min-w-0">
+              <div className="flex flex-col space-y-3 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-3">
                 <Button
                   variant="outline"
-                  className="w-40 bg-white/5 border-white/10 text-white justify-between shrink-0"
+                  className="w-full sm:w-40 bg-white/5 border-white/10 text-white justify-between shrink-0"
                   onClick={() => setShowTokenSelect("from")}
                 >
                   {fromToken ? (
@@ -369,30 +387,27 @@ export function TradingInterface() {
                   )}
                   <ChevronDown className="w-4 h-4" />
                 </Button>
-                <div className="flex-1 relative min-w-0">
+                <div className="flex-1 relative">
                   <Input
                     placeholder="0.00"
                     value={fromAmount}
                     onChange={(e) => setFromAmount(e.target.value)}
-                    className="bg-white/5 border-white/10 text-white text-right text-lg pr-20 min-w-[180px]"
+                    className="bg-white/5 border-white/10 text-white text-right text-lg pr-16"
                     type="number"
                     step="any"
                     min="0"
                   />
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex space-x-1">
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2">
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-6 px-1.5 text-xs text-blue-400 hover:text-blue-300 shrink-0"
-                      onClick={() => setFromAmount("500")}
-                    >
-                      50%
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-1.5 text-xs text-blue-400 hover:text-blue-300 shrink-0"
-                      onClick={() => setFromAmount("1000")}
+                      className="h-8 px-3 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-400/10 font-medium"
+                      onClick={() => {
+                        const balance = parseFloat(inputTokenBalance);
+                        if (!isNaN(balance)) {
+                          setFromAmount(inputTokenBalance);
+                        }
+                      }}
                     >
                       MAX
                     </Button>
@@ -425,10 +440,10 @@ export function TradingInterface() {
               )}
             </div>
             <div className="bg-white/5 rounded-lg p-4 border border-white/10">
-              <div className="flex items-center space-x-3">
+              <div className="flex flex-col space-y-3 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-3">
                 <Button
                   variant="outline"
-                  className="w-40 bg-white/5 border-white/10 text-white justify-between"
+                  className="w-full sm:w-40 bg-white/5 border-white/10 text-white justify-between shrink-0"
                   onClick={() => setShowTokenSelect("to")}
                 >
                   {toToken ? (
