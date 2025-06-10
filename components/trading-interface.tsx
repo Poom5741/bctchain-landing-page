@@ -24,6 +24,7 @@ import {
 import { WalletButton } from "./wallet-button";
 import { useWallet } from "@/hooks/use-wallet";
 import { TokenInfo, DEX_CONFIG } from "@/lib/token-list";
+import { TokenLogo } from "@/components/ui/token-logo";
 import { dexService } from "@/lib/dex-service";
 import { useSwap } from "@/hooks/use-swap";
 
@@ -43,15 +44,15 @@ interface SwapQuote {
 
 export function TradingInterface() {
   const { connection, switchToBCTChain } = useWallet();
-  const { 
-    inputToken: fromToken, 
-    outputToken: toToken, 
-    inputTokenBalance, 
-    outputTokenBalance, 
-    setInputToken: setFromToken, 
+  const {
+    inputToken: fromToken,
+    outputToken: toToken,
+    inputTokenBalance,
+    outputTokenBalance,
+    setInputToken: setFromToken,
     setOutputToken: setToToken,
     refreshBalances,
-    tokens: availableTokens
+    tokens: availableTokens,
   } = useSwap();
   const [fromAmount, setFromAmount] = useState("");
   const [toAmount, setToAmount] = useState("");
@@ -97,8 +98,10 @@ export function TradingInterface() {
               fee: 0.3,
               route: quoteResult.path,
               gasEstimate: "150000",
-              minimumReceived: (parseFloat(quoteResult.amountOutDecimal) * 0.995).toFixed(6), // 0.5% slippage
-              expiresAt: Date.now() + 30000
+              minimumReceived: (
+                parseFloat(quoteResult.amountOutDecimal) * 0.995
+              ).toFixed(6), // 0.5% slippage
+              expiresAt: Date.now() + 30000,
             };
             setQuote(mockQuote);
             setToAmount(quoteResult.amountOutDecimal);
@@ -140,14 +143,14 @@ export function TradingInterface() {
 
     const tempToken = fromToken;
     const tempAmount = fromAmount;
-    
+
     if (toToken) {
       await setFromToken(toToken);
     }
     if (tempToken) {
       await setToToken(tempToken);
     }
-    
+
     setFromAmount(toAmount);
     setToAmount(tempAmount);
     setError(null);
@@ -176,7 +179,10 @@ export function TradingInterface() {
       setError(null);
 
       // Calculate minimum amount out with slippage
-      const minimumReceived = (parseFloat(quote.outputAmount) * (1 - slippage / 100)).toFixed(6);
+      const minimumReceived = (
+        parseFloat(quote.outputAmount) *
+        (1 - slippage / 100)
+      ).toFixed(6);
 
       // Use the actual dexService executeSwap method with correct parameters
       const txHash = await dexService.executeSwap(
@@ -201,7 +207,7 @@ export function TradingInterface() {
         // Wait for transaction confirmation
         await dexService.waitForTransaction(txHash);
         setTxStatus("success");
-        
+
         // Refresh balances after successful swap
         await refreshBalances();
       }
@@ -234,15 +240,8 @@ export function TradingInterface() {
   };
 
   const getTokenLogo = (symbol: string) => {
-    const logoMap: { [key: string]: string } = {
-      BCT: "🔶",
-      USDG: "💵",
-      BTC: "₿",
-      ETH: "Ξ",
-      USDT: "💰",
-      USDC: "🪙",
-    };
-    return logoMap[symbol] || "🪙";
+    // This function is kept for backward compatibility but will be replaced with TokenLogo component
+    return null;
   };
 
   const filteredTokens = availableTokens.filter(
@@ -362,9 +361,7 @@ export function TradingInterface() {
                 >
                   {fromToken ? (
                     <div className="flex items-center space-x-2">
-                      <span className="text-lg">
-                        {getTokenLogo(fromToken.symbol)}
-                      </span>
+                      <TokenLogo token={fromToken} size="sm" />
                       <span>{fromToken.symbol}</span>
                     </div>
                   ) : (
@@ -436,9 +433,7 @@ export function TradingInterface() {
                 >
                   {toToken ? (
                     <div className="flex items-center space-x-2">
-                      <span className="text-lg">
-                        {getTokenLogo(toToken.symbol)}
-                      </span>
+                      <TokenLogo token={toToken} size="sm" />
                       <span>{toToken.symbol}</span>
                     </div>
                   ) : (
@@ -602,9 +597,7 @@ export function TradingInterface() {
                       }}
                     >
                       <div className="flex items-center space-x-3">
-                        <span className="text-2xl">
-                          {getTokenLogo(token.symbol)}
-                        </span>
+                        <TokenLogo token={token} size="md" />
                         <div>
                           <div className="text-white font-medium">
                             {token.symbol}

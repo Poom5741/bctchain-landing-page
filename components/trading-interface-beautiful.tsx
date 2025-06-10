@@ -24,6 +24,7 @@ import {
 import { WalletButton } from "./wallet-button";
 import { useWallet } from "@/hooks/use-wallet";
 import { TokenListService, TokenInfo, DEX_CONFIG } from "@/lib/token-list";
+import { TokenLogo } from "@/components/ui/token-logo";
 import { dexService, SwapQuote, SwapParams } from "@/lib/dex-service";
 
 export function TradingInterface() {
@@ -230,15 +231,8 @@ export function TradingInterface() {
   };
 
   const getTokenLogo = (symbol: string) => {
-    const logoMap: { [key: string]: string } = {
-      BCT: "🔶",
-      USDG: "💵",
-      BTC: "₿",
-      ETH: "Ξ",
-      USDT: "💰",
-      USDC: "🪙",
-    };
-    return logoMap[symbol] || "🪙";
+    // This function is kept for backward compatibility but will be replaced with TokenLogo component
+    return null;
   };
 
   const filteredTokens = availableTokens.filter(
@@ -359,9 +353,7 @@ export function TradingInterface() {
                 >
                   {fromToken ? (
                     <div className="flex items-center space-x-2">
-                      <span className="text-lg">
-                        {getTokenLogo(fromToken.symbol)}
-                      </span>
+                      <TokenLogo token={fromToken} size="sm" />
                       <span>{fromToken.symbol}</span>
                     </div>
                   ) : (
@@ -433,9 +425,7 @@ export function TradingInterface() {
                 >
                   {toToken ? (
                     <div className="flex items-center space-x-2">
-                      <span className="text-lg">
-                        {getTokenLogo(toToken.symbol)}
-                      </span>
+                      <TokenLogo token={toToken} size="sm" />
                       <span>{toToken.symbol}</span>
                     </div>
                   ) : (
@@ -599,9 +589,7 @@ export function TradingInterface() {
                       }}
                     >
                       <div className="flex items-center space-x-3">
-                        <span className="text-2xl">
-                          {getTokenLogo(token.symbol)}
-                        </span>
+                        <TokenLogo token={token} size="md" />
                         <div>
                           <div className="text-white font-medium">
                             {token.symbol}
