@@ -181,11 +181,22 @@ export class DexService {
 
   public static formatWeiToDecimal(
     wei: string | bigint,
-    decimals: number
+    decimals: number,
+    tokenSymbol?: string
   ): string {
     try {
-      const result = formatUnits(BigInt(wei), decimals);
-      console.log(`🔢 formatWeiToDecimal: wei=${wei}, decimals=${decimals}, result=${result}`);
+      let result = formatUnits(BigInt(wei), decimals);
+      
+      // Apply USDG decimal fix if needed
+      if (tokenSymbol === "USDG") {
+        const num = parseFloat(result);
+        if (num > 1000000) {
+          // USDG is being calculated with wrong decimals, divide by 10^12 to get correct value
+          result = (num / 1000000000000).toString();
+        }
+      }
+      
+      console.log(`🔢 formatWeiToDecimal: wei=${wei}, decimals=${decimals}, symbol=${tokenSymbol}, result=${result}`);
       return result;
     } catch (error) {
       console.error(
@@ -213,7 +224,8 @@ export class DexService {
   async getTokenBalance(
     walletAddress: string,
     tokenAddress: string,
-    decimals: number
+    decimals: number,
+    tokenSymbol?: string
   ): Promise<{ wei: bigint; formatted: string }> {
     if (!this.provider) {
       console.error("Provider not available for getTokenBalance.");
@@ -252,7 +264,7 @@ export class DexService {
     }
     return {
       wei: balanceWei,
-      formatted: DexService.formatWeiToDecimal(balanceWei, decimals),
+      formatted: DexService.formatWeiToDecimal(balanceWei, decimals, tokenSymbol),
     };
   }
 
@@ -312,7 +324,8 @@ export class DexService {
           const nativeBalanceData = await this.getTokenBalance(
             walletAddress,
             DEX_CONFIG.NATIVE_TOKEN.address,
-            DEX_CONFIG.NATIVE_TOKEN.decimals
+            DEX_CONFIG.NATIVE_TOKEN.decimals,
+            DEX_CONFIG.NATIVE_TOKEN.symbol
           );
           balances[DEX_CONFIG.NATIVE_TOKEN.address.toLowerCase()] = {
             balance: nativeBalanceData.formatted,
@@ -325,7 +338,8 @@ export class DexService {
           const balanceData = await this.getTokenBalance(
             walletAddress,
             token.address,
-            token.decimals
+            token.decimals,
+            token.symbol
           );
           console.log(`💰 ${token.symbol} raw: ${balanceData.wei} wei, formatted: ${balanceData.formatted}`);
           balances[token.address.toLowerCase()] = {
@@ -477,9 +491,13 @@ export class DexService {
         actualPath[actualPath.length - 1]
       );
 
+      // Get output token info to pass symbol for USDG fix
+      const outputTokenInfo = this.getTokenInfoByAddress(actualPath[actualPath.length - 1]);
+      
       const amountOutFormatted = DexService.formatWeiToDecimal(
         amountsOut[amountsOut.length - 1],
-        tokenOutDecimals
+        tokenOutDecimals,
+        outputTokenInfo?.symbol
       );
       console.log(
         `Quote received: ${amountOutFormatted} of ${
@@ -749,7 +767,8 @@ export class DexService {
     const balanceAData = await this.getTokenBalance(
       walletAddress,
       tokenAAddress,
-      tokenAInfo.decimals
+      tokenAInfo.decimals,
+      tokenAInfo.symbol
     );
     if (balanceAData.wei < amountADesiredWei) {
       console.error(
@@ -764,7 +783,8 @@ export class DexService {
     const balanceBData = await this.getTokenBalance(
       walletAddress,
       tokenBAddress,
-      tokenBInfo.decimals
+      tokenBInfo.decimals,
+      tokenBInfo.symbol
     );
     if (balanceBData.wei < amountBDesiredWei) {
       console.error(
@@ -1361,11 +1381,13 @@ export class DexService {
           // Format reserves
           const reserve0Formatted = DexService.formatWeiToDecimal(
             reserves[0],
-            token0Info.decimals
+            token0Info.decimals,
+            token0Info.symbol
           );
           const reserve1Formatted = DexService.formatWeiToDecimal(
             reserves[1],
-            token1Info.decimals
+            token1Info.decimals,
+            token1Info.symbol
           );
           const totalSupplyFormatted = DexService.formatWeiToDecimal(
             totalSupply,
@@ -1602,9 +1624,11 @@ export class DexService {
         (inputAmountWei * BigInt(outputReserve)) / BigInt(inputReserve);
 
       // Convert back to decimal
+      const outputTokenInfo = this.getTokenInfoByAddress(outputTokenAddress);
       const outputAmount = DexService.formatWeiToDecimal(
         outputAmountWei,
-        outputTokenDecimals
+        outputTokenDecimals,
+        outputTokenInfo?.symbol
       );
 
       return outputAmount;
@@ -1670,11 +1694,13 @@ export class DexService {
       // Format reserves
       const reserve0Formatted = DexService.formatWeiToDecimal(
         reserves[0],
-        token0Info?.decimals || 18
+        token0Info?.decimals || 18,
+        token0Info?.symbol
       );
       const reserve1Formatted = DexService.formatWeiToDecimal(
         reserves[1],
-        token1Info?.decimals || 18
+        token1Info?.decimals || 18,
+        token1Info?.symbol
       );
 
       return {
